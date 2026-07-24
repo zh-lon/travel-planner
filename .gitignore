@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# local data (SQLite 数据与密钥配置，勿提交)
+data/
+
+# env
+.env*
+
+# misc
+npm-debug.log*
+.DS_Store
+
+# Claude Code 本机配置
+.claude/settings.local.json

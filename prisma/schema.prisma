@@ -1,0 +1,81 @@
+// 数据模型：旅行计划 / 行程项 / 开销 / 配置
+// SQLite 不支持枚举，type 与 category 用字符串常量，取值见 src/types/constants.ts
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/app.db"
+}
+
+model Trip {
+  id          String   @id @default(cuid())
+  title       String
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  budgetTotal Float?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items    ItineraryItem[]
+  expenses Expense[]
+  checklist ChecklistItem[]
+}
+
+model ItineraryItem {
+  id            String  @id @default(cuid())
+  tripId        String
+  trip          Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  dayIndex      Int
+  sortOrder     Int
+  type          String // SIGHT | TRANSPORT | HOTEL | FOOD | SHOPPING | OTHER
+  title         String
+  startTime     String? // "09:30"
+  endTime       String?
+  placeName     String?
+  lng           Float?
+  lat           Float?
+  address       String?
+  estimatedCost Float?
+  notes         String?
+  transportMode String? // 从上一个点到本点的交通方式：line | driving | walking | riding，空 = 跟随全局默认
+  aiGenerated   Boolean @default(false)
+  createdAt     DateTime @default(now())
+
+  expenses Expense[]
+}
+
+model Expense {
+  id           String         @id @default(cuid())
+  tripId       String
+  trip         Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  date         DateTime
+  category     String // TRANSPORT | HOTEL | FOOD | TICKET | SHOPPING | OTHER
+  title        String
+  amount       Float
+  payer        String? // 垫付人（多人分摊用）
+  participants String? // 分摊人 JSON 数组，空 = 不参与分摊
+  itemId       String?
+  item         ItineraryItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  notes        String?
+  createdAt    DateTime       @default(now())
+}
+
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  text      String
+  checked   Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value String
+}
