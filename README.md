@@ -30,6 +30,7 @@
 - 行前清单（常用物品一键添加）
 - 导出 Markdown / JSON 备份（可再导入恢复）/ 打印页面（另存 PDF）
 - 亲友局域网访问（`npm run dev:lan`）
+- **服务器部署 + 访问密码**：Docker Compose 一键部署，设置 `AUTH_PASSWORD` 即启用全站登录（不设则免登录），见 [DEPLOY.md](DEPLOY.md)
 
 ## 🛠️ 技术栈
 
@@ -67,6 +68,10 @@ npm run dev        # 启动，访问 http://localhost:3000
 
 - 全部数据在本机 `data/app.db` 单文件中，备份 = 复制该文件
 - 行程可导出 JSON 备份并随时导入恢复（含日程、开销、清单及其关联）
+
+## 🚢 部署到服务器
+
+支持 Docker Compose（推荐）与 PM2 两种方式，含访问密码认证与 nginx HTTPS 配置示例，详见 [DEPLOY.md](DEPLOY.md)。
 
 ## 🔧 开发
 

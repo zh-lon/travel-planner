@@ -1,0 +1,9 @@
+node_modules
+.next
+.next-*
+data
+.git
+.claude
+*.md
+!README.md
+.env*

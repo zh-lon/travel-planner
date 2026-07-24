@@ -1,0 +1,12 @@
+services:
+  travel-planner:
+    build: .
+    container_name: travel-planner
+    ports:
+      - "3000:3000"
+    environment:
+      - AUTH_PASSWORD=${AUTH_PASSWORD:?请先在 .env 文件中设置 AUTH_PASSWORD 访问密码}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

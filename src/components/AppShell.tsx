@@ -1,7 +1,9 @@
 "use client";
 
 import "@ant-design/v5-patch-for-react-19";
-import { App as AntApp, ConfigProvider, Layout, Menu } from "antd";
+import { useEffect, useState } from "react";
+import { App as AntApp, Button, ConfigProvider, Layout, Menu } from "antd";
+import { LogoutOutlined } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
@@ -19,6 +21,25 @@ const NAV_ITEMS = [
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const selectedKey = pathname.startsWith("/settings") ? "/settings" : "/";
+  const isLogin = pathname === "/login";
+  const [authInfo, setAuthInfo] = useState<{ enabled: boolean; authed: boolean }>({
+    enabled: false,
+    authed: false,
+  });
+
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then((res) => res.json())
+      .then((data: { enabled?: boolean; authed?: boolean }) =>
+        setAuthInfo({ enabled: !!data.enabled, authed: !!data.authed }),
+      )
+      .catch(() => {});
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.href = "/login";
+  };
 
   return (
     <ConfigProvider locale={zhCN}>
@@ -36,12 +57,19 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div style={{ fontSize: 18, fontWeight: 600, marginRight: 40, whiteSpace: "nowrap" }}>
               🧳 旅行规划
             </div>
-            <Menu
-              mode="horizontal"
-              selectedKeys={[selectedKey]}
-              items={NAV_ITEMS}
-              style={{ flex: 1, borderBottom: "none" }}
-            />
+            {!isLogin && (
+              <Menu
+                mode="horizontal"
+                selectedKeys={[selectedKey]}
+                items={NAV_ITEMS}
+                style={{ flex: 1, borderBottom: "none" }}
+              />
+            )}
+            {!isLogin && authInfo.enabled && authInfo.authed && (
+              <Button type="text" size="small" icon={<LogoutOutlined />} onClick={handleLogout}>
+                退出
+              </Button>
+            )}
           </Layout.Header>
           <Layout.Content
             style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: 24 }}
