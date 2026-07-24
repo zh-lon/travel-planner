@@ -35,12 +35,19 @@ export async function POST(request: Request, { params }: Params) {
   const trip = await prisma.trip.findUnique({ where: { id } });
   if (!trip) return NextResponse.json({ error: "行程不存在" }, { status: 404 });
 
-  const body = (await request.json().catch(() => null)) as { items?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    items?: unknown;
+    days?: unknown;
+  } | null;
   if (!body || !Array.isArray(body.items)) {
     return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
   }
 
-  const dayCount = dayCountOf(trip.startDate, trip.endDate);
+  // 支持随本次应用调整行程天数（AI 方案增减天时传入）
+  const currentDayCount = dayCountOf(trip.startDate, trip.endDate);
+  const daysReq = Number(body.days);
+  const dayCount =
+    Number.isInteger(daysReq) && daysReq >= 1 && daysReq <= 30 ? daysReq : currentDayCount;
   const items: IncomingItem[] = [];
   for (const raw of body.items as Record<string, unknown>[]) {
     if (typeof raw !== "object" || raw === null) continue;
@@ -71,6 +78,14 @@ export async function POST(request: Request, { params }: Params) {
   const withoutId = items.filter((i) => !i.id);
 
   await prisma.$transaction([
+    ...(dayCount !== currentDayCount
+      ? [
+          prisma.trip.update({
+            where: { id },
+            data: { endDate: new Date(trip.startDate.getTime() + (dayCount - 1) * 86400000) },
+          }),
+        ]
+      : []),
     // 删除未保留的行程项（提交集之外的全部删掉）
     prisma.itineraryItem.deleteMany({
       where: { tripId: id, id: { notIn: withId.map((i) => i.id) } },

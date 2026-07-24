@@ -15,8 +15,8 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { EnvironmentOutlined, HolderOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Tag, Typography } from "antd";
+import { EnvironmentOutlined, HolderOutlined, MoreOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Dropdown, Tag, Typography } from "antd";
 import type { Dayjs } from "dayjs";
 import { itemTypeMeta } from "@/types/constants";
 import type { ItineraryItemT } from "@/types";
@@ -29,6 +29,8 @@ interface BoardProps {
   onAddItem: (dayIndex: number) => void;
   onEditItem: (item: ItineraryItemT) => void;
   onReorder: (items: ItineraryItemT[]) => void;
+  onInsertDay: (dayIndex: number) => void; // 在该位置插入一天（= dayCount 表示末尾追加）
+  onRemoveDay: (dayIndex: number) => void;
 }
 
 function buildColumns(items: ItineraryItemT[], dayCount: number): ItineraryItemT[][] {
@@ -148,18 +150,24 @@ function SortableItemCard({
 
 function DayColumn({
   dayIndex,
+  dayCount,
   date,
   items,
   weather,
   onAddItem,
   onEditItem,
+  onInsertDay,
+  onRemoveDay,
 }: {
   dayIndex: number;
+  dayCount: number;
   date: Dayjs;
   items: ItineraryItemT[];
   weather?: string;
   onAddItem: (dayIndex: number) => void;
   onEditItem: (item: ItineraryItemT) => void;
+  onInsertDay: (dayIndex: number) => void;
+  onRemoveDay: (dayIndex: number) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day-${dayIndex}` });
   const cost = items.reduce((sum, i) => sum + (i.estimatedCost ?? 0), 0);
@@ -176,15 +184,34 @@ function DayColumn({
         transition: "background .2s",
       }}
     >
-      <div style={{ marginBottom: 10 }}>
-        <Typography.Text strong>第 {dayIndex + 1} 天</Typography.Text>
-        <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          {date.format("M月D日 ddd")}
-          {cost > 0 ? ` · 预估 ¥${cost.toLocaleString()}` : ""}
-        </Typography.Text>
-        {weather && (
-          <div style={{ fontSize: 12, color: "#8c8c8c", marginTop: 2 }}>{weather}</div>
-        )}
+      <div style={{ marginBottom: 10, display: "flex", alignItems: "flex-start", gap: 4 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Typography.Text strong>第 {dayIndex + 1} 天</Typography.Text>
+          <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            {date.format("M月D日 ddd")}
+            {cost > 0 ? ` · 预估 ¥${cost.toLocaleString()}` : ""}
+          </Typography.Text>
+          {weather && (
+            <div style={{ fontSize: 12, color: "#8c8c8c", marginTop: 2 }}>{weather}</div>
+          )}
+        </div>
+        <Dropdown
+          trigger={["click"]}
+          menu={{
+            items: [
+              { key: "before", label: "在这天前插入一天" },
+              { key: "after", label: "在这天后插入一天" },
+              { type: "divider" as const },
+              { key: "remove", label: "删除这一天", danger: true, disabled: dayCount <= 1 },
+            ],
+            onClick: ({ key }) => {
+              if (key === "remove") onRemoveDay(dayIndex);
+              else onInsertDay(key === "before" ? dayIndex : dayIndex + 1);
+            },
+          }}
+        >
+          <Button type="text" size="small" icon={<MoreOutlined />} />
+        </Dropdown>
       </div>
       <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
         <div
@@ -231,6 +258,8 @@ export default function ItineraryBoard({
   onAddItem,
   onEditItem,
   onReorder,
+  onInsertDay,
+  onRemoveDay,
 }: BoardProps) {
   const [columns, setColumns] = useState<ItineraryItemT[][]>(() => buildColumns(items, dayCount));
   const [activeItem, setActiveItem] = useState<ItineraryItemT | null>(null);
@@ -322,13 +351,36 @@ export default function ItineraryBoard({
           <DayColumn
             key={dayIndex}
             dayIndex={dayIndex}
+            dayCount={dayCount}
             date={startDate.add(dayIndex, "day")}
             items={colItems}
             weather={weather?.[dayIndex]}
             onAddItem={onAddItem}
             onEditItem={onEditItem}
+            onInsertDay={onInsertDay}
+            onRemoveDay={onRemoveDay}
           />
         ))}
+        <div
+          onClick={() => onInsertDay(dayCount)}
+          style={{
+            width: 52,
+            flexShrink: 0,
+            border: "1px dashed #d9d9d9",
+            borderRadius: 8,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            cursor: "pointer",
+            color: "#999",
+            minHeight: 160,
+          }}
+        >
+          <PlusOutlined />
+          <span style={{ writingMode: "vertical-lr", letterSpacing: 4, fontSize: 12 }}>添加一天</span>
+        </div>
       </div>
       <DragOverlay>
         {activeItem ? (

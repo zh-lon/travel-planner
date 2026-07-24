@@ -24,7 +24,7 @@ import type { ExpenseT, ItineraryItemT, TripDetail } from "@/types";
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [tripModalOpen, setTripModalOpen] = useState(false);
@@ -100,6 +100,50 @@ export default function TripDetailPage() {
       message.error("保存排序失败，已还原");
       load();
     }
+  };
+
+  const handleInsertDay = async (dayIndex: number) => {
+    const res = await fetch(`/api/trips/${id}/days`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "insert", dayIndex }),
+    }).catch(() => null);
+    if (res?.ok) {
+      message.success("已添加一天");
+      load();
+    } else {
+      const data = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+      message.error(data?.error ?? "操作失败");
+    }
+  };
+
+  const handleRemoveDay = (dayIndex: number) => {
+    if (!trip) return;
+    const count = trip.items.filter((i) => i.dayIndex === dayIndex).length;
+    modal.confirm({
+      title: `删除第 ${dayIndex + 1} 天？`,
+      content:
+        count > 0
+          ? `该天的 ${count} 个安排将并入${dayIndex === 0 ? "下一天" : "前一天"}，后续日期整体前移一天。`
+          : "后续日期将整体前移一天。",
+      okText: "删除",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        const res = await fetch(`/api/trips/${id}/days`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "remove", dayIndex }),
+        }).catch(() => null);
+        if (res?.ok) {
+          message.success("已删除该天");
+          load();
+        } else {
+          const data = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+          message.error(data?.error ?? "操作失败");
+        }
+      },
+    });
   };
 
   const handleDeleteTrip = async () => {
@@ -236,6 +280,8 @@ export default function TripDetailPage() {
                   onAddItem={(dayIndex) => setItemModal({ open: true, dayIndex, item: null })}
                   onEditItem={(item) => setItemModal({ open: true, dayIndex: item.dayIndex, item })}
                   onReorder={handleReorder}
+                  onInsertDay={handleInsertDay}
+                  onRemoveDay={handleRemoveDay}
                 />
               ),
             },

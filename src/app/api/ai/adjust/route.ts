@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { buildAdjustPrompt, planStreamResponse } from "@/lib/ai/generate";
-import { dayCountOf } from "@/lib/trips";
 import type { ItineraryItemT, TripDetail } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +29,7 @@ export async function POST(request: Request) {
 
   return planStreamResponse(async () => ({
     messages: buildAdjustPrompt(tripDetail, tripDetail.items as ItineraryItemT[], instruction),
-    expectedDays: dayCountOf(trip.startDate, trip.endDate),
+    expectedDays: 0, // 允许调整方案增减天数（如「行程加一天」），对比预览中可见
     city: trip.destination,
   }));
 }

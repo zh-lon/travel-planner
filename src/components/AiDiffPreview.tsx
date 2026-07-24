@@ -12,6 +12,8 @@ interface Props {
   startDate?: Dayjs;
   selected: Set<string>;
   onSelectionChange: (next: Set<string>) => void;
+  oldDayCount?: number; // 现有行程天数
+  planDays?: number; // 方案天数（与现有不同时展示天数变化）
 }
 
 const KIND_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -44,7 +46,14 @@ function ChangeLine({ change }: { change: DiffChange }) {
   );
 }
 
-export default function AiDiffPreview({ entries, startDate, selected, onSelectionChange }: Props) {
+export default function AiDiffPreview({
+  entries,
+  startDate,
+  selected,
+  onSelectionChange,
+  oldDayCount,
+  planDays,
+}: Props) {
   const [showUnchanged, setShowUnchanged] = useState(false);
 
   const changed = entries.filter((e) => e.kind !== "unchanged");
@@ -54,6 +63,7 @@ export default function AiDiffPreview({ entries, startDate, selected, onSelectio
     removed: entries.filter((e) => e.kind === "removed").length,
     unchanged: entries.filter((e) => e.kind === "unchanged").length,
   };
+  const dayChanged = oldDayCount != null && planDays != null && oldDayCount !== planDays;
   const allSelected = changed.length > 0 && changed.every((e) => selected.has(e.key));
   const someSelected = changed.some((e) => selected.has(e.key));
 
@@ -73,7 +83,8 @@ export default function AiDiffPreview({ entries, startDate, selected, onSelectio
         showIcon
         message={
           changed.length > 0
-            ? `对比结果：新增 ${counts.added} · 修改 ${counts.modified} · 删除 ${counts.removed} · 不变 ${counts.unchanged}，已勾选 ${changed.filter((e) => selected.has(e.key)).length} 项变更`
+            ? `对比结果：新增 ${counts.added} · 修改 ${counts.modified} · 删除 ${counts.removed} · 不变 ${counts.unchanged}，已勾选 ${changed.filter((e) => selected.has(e.key)).length} 项变更` +
+              (dayChanged ? `；天数 ${oldDayCount} 天 → ${planDays} 天` : "")
             : "AI 方案与现有行程没有差异"
         }
       />
@@ -110,6 +121,16 @@ export default function AiDiffPreview({ entries, startDate, selected, onSelectio
                   {startDate.add(d, "day").format("M月D日 ddd")}
                 </Typography.Text>
               ) : null}
+              {oldDayCount != null && planDays != null && d >= oldDayCount && d < planDays && (
+                <Tag color="success" style={{ marginLeft: 8 }}>
+                  新增天
+                </Tag>
+              )}
+              {planDays != null && d >= planDays && (
+                <Tag color="error" style={{ marginLeft: 8 }}>
+                  方案移除此天（未勾选删除的安排将保留）
+                </Tag>
+              )}
             </Typography.Text>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
               {dayEntries.map((entry) => {

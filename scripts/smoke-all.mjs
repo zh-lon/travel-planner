@@ -199,6 +199,41 @@ check(
   "逐项应用后开销与行程项的关联未断",
 );
 
+// ---------- 天数操作 ----------
+const daysOf = (t) => Math.round((new Date(t.endDate) - new Date(t.startDate)) / 86400000) + 1;
+// 当前：3 天（9/1~9/3），keptA 在 day0，新增项在 day1
+await fetch(`${BASE}/api/trips/${trip.id}/days`, {
+  method: "POST",
+  headers: H,
+  body: JSON.stringify({ action: "insert", dayIndex: 1 }),
+});
+let afterDays = await fetch(`${BASE}/api/trips/${trip.id}`).then((r) => r.json());
+check(
+  daysOf(afterDays) === 4 && afterDays.items.find((i) => i.title === "新增景点")?.dayIndex === 2,
+  "中间插入一天：天数 +1 且后续安排顺延",
+);
+await fetch(`${BASE}/api/trips/${trip.id}/days`, {
+  method: "POST",
+  headers: H,
+  body: JSON.stringify({ action: "remove", dayIndex: 2 }),
+});
+afterDays = await fetch(`${BASE}/api/trips/${trip.id}`).then((r) => r.json());
+check(
+  daysOf(afterDays) === 3 && afterDays.items.find((i) => i.title === "新增景点")?.dayIndex === 1,
+  "删除某天：安排并入前一天且天数 -1",
+);
+// apply-items 携带 days 扩展天数
+await fetch(`${BASE}/api/trips/${trip.id}/apply-items`, {
+  method: "POST",
+  headers: H,
+  body: JSON.stringify({
+    items: afterDays.items.map((i) => ({ ...i })),
+    days: 4,
+  }),
+});
+afterDays = await fetch(`${BASE}/api/trips/${trip.id}`).then((r) => r.json());
+check(daysOf(afterDays) === 4, "逐项应用携带 days 可扩展行程天数");
+
 // ---------- 地图搜索（真实调用一次，验证 Key 配置） ----------
 const geo = await fetch(`${BASE}/api/geo/search?keywords=${encodeURIComponent("天安门")}`).then((r) => r.json());
 if (geo.ok && geo.pois?.length > 0) {

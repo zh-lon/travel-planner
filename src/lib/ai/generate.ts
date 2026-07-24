@@ -110,7 +110,7 @@ export function buildAdjustPrompt(trip: TripDetail, items: ItineraryItemT[], ins
   return [
     {
       role: "system",
-      content: `你是资深的国内旅行规划师。你将收到一份现有行程和调整要求，请输出调整后的完整行程——必须完整输出所有天的所有行程项（未被要求改动的内容原样保留），不要只输出改动部分。${JSON_CONTRACT}`,
+      content: `你是资深的国内旅行规划师。你将收到一份现有行程和调整要求，请输出调整后的完整行程——必须完整输出所有天的所有行程项（未被要求改动的内容原样保留），不要只输出改动部分。若调整要求明确要求增加或减少天数（如「多加一天」「压缩成两天」），days 数组长度按要求变化；否则 days 数组长度必须与现有行程天数保持一致。${JSON_CONTRACT}`,
     },
     {
       role: "user",

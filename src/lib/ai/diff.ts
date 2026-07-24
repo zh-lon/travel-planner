@@ -124,13 +124,12 @@ export function diffPlan(oldItems: ItineraryItemT[], plan: AiPlan): DiffEntry[] 
     });
   });
 
-  const dayCount = plan.days.length;
   for (const p of pool) {
     if (p.used) continue;
     entries.push({
       key: `r-${p.item.id}`,
       kind: "removed",
-      dayIndex: Math.min(p.item.dayIndex, dayCount - 1),
+      dayIndex: p.item.dayIndex, // 保留原天：方案缩减天数时，能看出该天将被移除
       orderInDay: 100000 + p.item.sortOrder,
       newItem: null,
       oldItem: p.item,
@@ -140,12 +139,21 @@ export function diffPlan(oldItems: ItineraryItemT[], plan: AiPlan): DiffEntry[] 
   return entries;
 }
 
-// 按勾选结果合成最终行程项列表（保留原 id 以维持开销关联）
+// 按勾选结果合成最终行程项列表（保留原 id 以维持开销关联）。
+// 返回 days = 应用后行程应有的天数：以方案天数为基础，未勾选的删除/跨天修改
+// 需要保留在原天时自动扩展（如拒绝了「压缩天数」的删除项，则原天保留）
 export function composeApplyItems(
   entries: DiffEntry[],
   selected: Set<string>,
-  dayCount: number,
-): ApplyItemPayload[] {
+  planDays: number,
+): { items: ApplyItemPayload[]; days: number } {
+  let dayCount = Math.max(1, planDays);
+  for (const e of entries) {
+    if ((e.kind === "removed" || e.kind === "modified") && !selected.has(e.key) && e.oldItem) {
+      dayCount = Math.max(dayCount, e.oldItem.dayIndex + 1);
+    }
+  }
+
   const emitted: Draft[][] = Array.from({ length: dayCount }, () => []);
   const kept: ItineraryItemT[][] = Array.from({ length: dayCount }, () => []);
 
@@ -185,7 +193,7 @@ export function composeApplyItems(
 
   for (const e of planEntries) {
     if (e.kind === "unchanged") {
-      emitted[e.dayIndex].push(fromOld(e.oldItem!));
+      emitted[clampDay(e.dayIndex)].push(fromOld(e.oldItem!));
     } else if (e.kind === "modified") {
       if (selected.has(e.key)) {
         const draft = fromNew(e.newItem!, e.oldItem!.id);
@@ -195,14 +203,14 @@ export function composeApplyItems(
           draft.lat = e.oldItem!.lat;
           draft.address = e.oldItem!.address;
         }
-        emitted[e.dayIndex].push(draft);
+        emitted[clampDay(e.dayIndex)].push(draft);
       } else if (e.oldItem!.dayIndex === e.dayIndex) {
-        emitted[e.dayIndex].push(fromOld(e.oldItem!));
+        emitted[clampDay(e.dayIndex)].push(fromOld(e.oldItem!));
       } else {
         kept[clampDay(e.oldItem!.dayIndex)].push(e.oldItem!);
       }
     } else if (e.kind === "added" && selected.has(e.key)) {
-      emitted[e.dayIndex].push(fromNew(e.newItem!));
+      emitted[clampDay(e.dayIndex)].push(fromNew(e.newItem!));
     }
   }
 
@@ -218,5 +226,5 @@ export function composeApplyItems(
     const dayList = [...emitted[d], ...kept[d].map(fromOld)];
     dayList.forEach((draft, idx) => result.push({ ...draft, dayIndex: d, sortOrder: idx }));
   }
-  return result;
+  return { items: result, days: dayCount };
 }

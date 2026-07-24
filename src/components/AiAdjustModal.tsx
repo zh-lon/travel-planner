@@ -100,11 +100,11 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     if (!plan || selectedCount === 0) return;
     setApplying(true);
     try {
-      const items = composeApplyItems(entries, selected, plan.days.length);
+      const { items, days } = composeApplyItems(entries, selected, plan.days.length);
       const res = await fetch(`/api/trips/${trip.id}/apply-items`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, days }),
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) throw new Error(data.error);
@@ -146,7 +146,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
             rows={4}
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder={`告诉 AI 你想怎么调整，例如：\n· 第 2 天太赶了，减少一个景点，节奏放慢\n· 把美食安排换成本地老字号\n· 第 3 天改成亲子主题`}
+            placeholder={`告诉 AI 你想怎么调整，例如：\n· 第 2 天太赶了，减少一个景点，节奏放慢\n· 把美食安排换成本地老字号\n· 行程加一天，加的这天去周边古镇\n· 压缩成两天的精华版`}
             maxLength={500}
           />
           <Button type="primary" block icon={<RobotOutlined />} onClick={handleGenerate}>
@@ -195,6 +195,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
               startDate={dayjs(trip.startDate)}
               selected={selected}
               onSelectionChange={setSelected}
+              oldDayCount={dayjs(trip.endDate).diff(dayjs(trip.startDate), "day") + 1}
+              planDays={plan.days.length}
             />
           </div>
           <div style={{ display: "flex", gap: 12 }}>
