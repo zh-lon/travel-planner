@@ -5,7 +5,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - AUTH_PASSWORD=${AUTH_PASSWORD:?请先在 .env 文件中设置 AUTH_PASSWORD 访问密码}
+      - AUTH_SECRET=${AUTH_SECRET:?请先在 .env 文件中设置 AUTH_SECRET（随机长字符串，用于会话签名）}
+      - DATABASE_URL=file:../data/app.db
       - TZ=Asia/Shanghai
     volumes:
       - ./data:/app/data

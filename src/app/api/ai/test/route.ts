@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { testConnection, type AiConfig, type AiProtocol } from "@/lib/ai/client";
+import { requireAdmin } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 // 连通性测试：优先用请求体里的表单值（用户可在保存前测试），缺省回落到已保存配置
 export async function POST(request: Request) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof NextResponse) return admin;
   const body = (await request.json().catch(() => ({}))) as Partial<AiConfig>;
   const saved = await getSettings();
 

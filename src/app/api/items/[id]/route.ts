@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { requireTripEditByChild, requireUser } from "@/lib/session";
 import { ITEM_TYPE_VALUES } from "@/types/constants";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,16 @@ const TRANSPORT_MODES = ["line", "driving", "walking", "riding"];
 
 export async function PUT(request: Request, { params }: Params) {
   const { id } = await params;
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const existing = await prisma.itineraryItem.findUnique({
+    where: { id },
+    select: { tripId: true },
+  });
+  if (!existing) return NextResponse.json({ error: "行程项不存在" }, { status: 404 });
+  const denied = await requireTripEditByChild(user, existing.tripId);
+  if (denied) return denied;
+
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
 
@@ -76,8 +87,18 @@ export async function PUT(request: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   const { id } = await params;
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const existing = await prisma.itineraryItem.findUnique({
+    where: { id },
+    select: { tripId: true },
+  });
+  if (!existing) return NextResponse.json({ error: "行程项不存在" }, { status: 404 });
+  const denied = await requireTripEditByChild(user, existing.tripId);
+  if (denied) return denied;
+
   try {
     await prisma.itineraryItem.delete({ where: { id } });
     return NextResponse.json({ ok: true });

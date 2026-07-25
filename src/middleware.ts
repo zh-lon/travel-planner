@@ -1,17 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { AUTH_COOKIE, authEnabled, verifyToken } from "@/lib/auth";
+import { AUTH_COOKIE, parseToken } from "@/lib/auth";
 
-// 全站认证拦截：未设置 AUTH_PASSWORD 时直接放行（本地免登录）
+// 全站认证拦截：多用户模式下始终启用。
+// 仅校验令牌签名与有效期（edge 环境无法查库），用户有效性由各接口的 requireUser 再核验。
 export async function middleware(request: NextRequest) {
-  if (!authEnabled()) return NextResponse.next();
-
   const { pathname } = request.nextUrl;
   if (pathname === "/login" || pathname.startsWith("/api/auth/")) {
     return NextResponse.next();
   }
 
   const token = request.cookies.get(AUTH_COOKIE)?.value;
-  if (token && (await verifyToken(token))) {
+  if (await parseToken(token)) {
     return NextResponse.next();
   }
 

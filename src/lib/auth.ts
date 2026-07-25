@@ -1,19 +1,17 @@
-// 简单访问密码认证：设置环境变量 AUTH_PASSWORD 即启用，未设置则全站免登录。
-// 使用 Web Crypto（middleware 的 edge 运行时与 Node 路由通用）。
-export const AUTH_COOKIE = "lxgh_auth";
+// 会话令牌签发/校验（Web Crypto，middleware 的 edge 运行时与 Node 路由通用）。
+// 注意：本文件不得引入 prisma（middleware 无法访问数据库）。
+export const AUTH_COOKIE = "lxgh_session";
 
-export function authEnabled(): boolean {
-  return !!process.env.AUTH_PASSWORD?.trim();
+function secret(): string {
+  // 部署时务必设置 AUTH_SECRET（随机长字符串）；未设置时使用开发默认值
+  return process.env.AUTH_SECRET?.trim() || "lxgh-dev-secret-change-me";
 }
 
-export function authPassword(): string {
-  return process.env.AUTH_PASSWORD?.trim() ?? "";
-}
-
-// 签名密钥由访问密码派生：改密码即令所有已发 Cookie 失效
 async function signingKey(): Promise<CryptoKey> {
-  const secret = `lxgh-auth-v1:${authPassword()}`;
-  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  const raw = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`lxgh-auth-v2:${secret()}`),
+  );
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 }
 
@@ -25,19 +23,30 @@ async function sign(data: string): Promise<string> {
     .join("");
 }
 
-export async function createToken(days = 30): Promise<string> {
+// 令牌格式：userId.过期时间戳.签名
+export async function createToken(userId: string, days = 30): Promise<string> {
   const exp = Date.now() + days * 86400000;
-  return `${exp}.${await sign(String(exp))}`;
+  return `${userId}.${exp}.${await sign(`${userId}.${exp}`)}`;
 }
 
-export async function verifyToken(token: string | undefined): Promise<boolean> {
-  if (!token) return false;
-  const dot = token.indexOf(".");
-  if (dot <= 0) return false;
-  const expStr = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
+export async function parseToken(token: string | undefined): Promise<{ userId: string } | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, expStr, sig] = parts;
   const exp = Number(expStr);
-  if (!Number.isFinite(exp) || exp < Date.now()) return false;
-  const expected = await sign(expStr);
-  return sig.length === expected.length && sig === expected;
+  if (!userId || !Number.isFinite(exp) || exp < Date.now()) return null;
+  const expected = await sign(`${userId}.${expStr}`);
+  if (sig.length !== expected.length || sig !== expected) return null;
+  return { userId };
+}
+
+// 从 Cookie 头解析令牌
+export function tokenFromCookieHeader(cookieHeader: string | null): string | undefined {
+  if (!cookieHeader) return undefined;
+  for (const part of cookieHeader.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === AUTH_COOKIE) return rest.join("=");
+  }
+  return undefined;
 }

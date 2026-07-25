@@ -12,6 +12,7 @@ COPY prisma ./prisma
 RUN npm config set registry $NPM_REGISTRY && npm ci --no-audit --no-fund
 
 COPY . .
+ENV DATABASE_URL=file:../data/app.db
 RUN npm run build
 
 ENV NODE_ENV=production

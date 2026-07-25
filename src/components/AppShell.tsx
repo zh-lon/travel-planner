@@ -2,7 +2,7 @@
 
 import "@ant-design/v5-patch-for-react-19";
 import { useEffect, useState } from "react";
-import { App as AntApp, Button, ConfigProvider, Layout, Menu } from "antd";
+import { App as AntApp, Button, ConfigProvider, Layout, Menu, Typography } from "antd";
 import { LogoutOutlined } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";
@@ -10,36 +10,44 @@ import "dayjs/locale/zh-cn";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import type { UserPublic } from "@/types";
 
 dayjs.locale("zh-cn");
 
-const NAV_ITEMS = [
-  { key: "/", label: <Link href="/">我的行程</Link> },
-  { key: "/settings", label: <Link href="/settings">设置</Link> },
-];
-
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const selectedKey = pathname.startsWith("/settings") ? "/settings" : "/";
   const isLogin = pathname === "/login";
-  const [authInfo, setAuthInfo] = useState<{ enabled: boolean; authed: boolean }>({
-    enabled: false,
-    authed: false,
-  });
+  const selectedKey = pathname.startsWith("/admin")
+    ? "/admin"
+    : pathname.startsWith("/settings")
+      ? "/settings"
+      : "/";
+  const [user, setUser] = useState<UserPublic | null>(null);
 
   useEffect(() => {
+    if (isLogin) return;
     fetch("/api/auth/status")
       .then((res) => res.json())
-      .then((data: { enabled?: boolean; authed?: boolean }) =>
-        setAuthInfo({ enabled: !!data.enabled, authed: !!data.authed }),
+      .then((data: { authed?: boolean; user?: UserPublic | null }) =>
+        setUser(data.authed && data.user ? data.user : null),
       )
       .catch(() => {});
-  }, [pathname]);
+  }, [pathname, isLogin]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     window.location.href = "/login";
   };
+
+  const navItems = [
+    { key: "/", label: <Link href="/">我的行程</Link> },
+    ...(user?.isAdmin
+      ? [
+          { key: "/settings", label: <Link href="/settings">设置</Link> },
+          { key: "/admin", label: <Link href="/admin">管理</Link> },
+        ]
+      : []),
+  ];
 
   return (
     <ConfigProvider locale={zhCN}>
@@ -61,14 +69,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <Menu
                 mode="horizontal"
                 selectedKeys={[selectedKey]}
-                items={NAV_ITEMS}
+                items={navItems}
                 style={{ flex: 1, borderBottom: "none" }}
               />
             )}
-            {!isLogin && authInfo.enabled && authInfo.authed && (
-              <Button type="text" size="small" icon={<LogoutOutlined />} onClick={handleLogout}>
-                退出
-              </Button>
+            {!isLogin && user && (
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Typography.Text type="secondary">
+                  {user.displayName || user.username}
+                  {user.isAdmin ? "（管理员）" : ""}
+                </Typography.Text>
+                <Button type="text" size="small" icon={<LogoutOutlined />} onClick={handleLogout}>
+                  退出
+                </Button>
+              </span>
             )}
           </Layout.Header>
           <Layout.Content

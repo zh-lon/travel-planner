@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { canEditRole, requireUser, tripAccess } from "@/lib/session";
 import { dayCountOf } from "@/lib/trips";
 import { ITEM_TYPE_VALUES } from "@/types/constants";
 
@@ -32,8 +33,14 @@ function strOrNull(v: unknown): string | null {
 // 不带 id 的新建、未出现的删除
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const trip = await prisma.trip.findUnique({ where: { id } });
-  if (!trip) return NextResponse.json({ error: "行程不存在" }, { status: 404 });
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const access = await tripAccess(id, user);
+  if (!access) return NextResponse.json({ error: "行程不存在或无权访问" }, { status: 404 });
+  if (!canEditRole(access.role)) {
+    return NextResponse.json({ error: "该行程对你是只读共享" }, { status: 403 });
+  }
+  const trip = access.trip;
 
   const body = (await request.json().catch(() => null)) as {
     items?: unknown;

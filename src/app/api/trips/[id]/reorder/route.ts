@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireTripEditByChild, requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,10 @@ type Params = { params: Promise<{ id: string }> };
 // 拖拽后批量持久化行程项的天序与排序
 export async function PUT(request: Request, { params }: Params) {
   const { id } = await params;
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const denied = await requireTripEditByChild(user, id);
+  if (denied) return denied;
   const body = (await request.json().catch(() => null)) as {
     items?: Array<{ id?: unknown; dayIndex?: unknown; sortOrder?: unknown }>;
   } | null;

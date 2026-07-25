@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { regeoAddress } from "@/lib/geo";
+import { requireUser } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 // 逆地理编码代理：?lng=&lat= → 地址描述
 export async function GET(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const { searchParams } = new URL(request.url);
   const lng = Number(searchParams.get("lng"));
   const lat = Number(searchParams.get("lat"));

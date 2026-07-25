@@ -1,5 +1,14 @@
 // API 传输层类型（日期为 ISO 字符串）
 
+export interface UserPublic {
+  id: string;
+  username: string;
+  displayName: string | null;
+  isAdmin?: boolean;
+}
+
+export type TripRole = "owner" | "edit" | "read";
+
 export interface TripSummary {
   id: string;
   title: string;
@@ -8,6 +17,9 @@ export interface TripSummary {
   endDate: string;
   budgetTotal: number | null;
   notes: string | null;
+  ownerId?: string | null;
+  owner?: UserPublic | null;
+  access?: { role: TripRole };
   createdAt: string;
   updatedAt: string;
   _count?: { items: number };
@@ -34,6 +46,7 @@ export interface ItineraryItemT {
 
 export interface TripDetail extends TripSummary {
   items: ItineraryItemT[];
+  shares?: { userId: string; canEdit: boolean; user: UserPublic }[];
 }
 
 export interface ExpenseT {

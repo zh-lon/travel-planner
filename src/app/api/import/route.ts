@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUser } from "@/lib/session";
 import { EXPENSE_CATEGORY_VALUES, ITEM_TYPE_VALUES } from "@/types/constants";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,8 @@ function num(v: unknown): number | null {
 
 // 从 JSON 备份恢复为新行程（生成全新 id，保留行程项与开销的关联关系）
 export async function POST(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || body.app !== "lxgh" || !body.trip) {
     return NextResponse.json({ error: "不是有效的行程备份文件" }, { status: 400 });
@@ -34,6 +37,7 @@ export async function POST(request: Request) {
       endDate,
       budgetTotal: num(rawTrip.budgetTotal),
       notes: str(rawTrip.notes),
+      ownerId: user.id,
     },
   });
 

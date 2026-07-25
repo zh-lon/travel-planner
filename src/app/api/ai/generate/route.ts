@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { buildCreatePrompt, planStreamResponse, type GenerateParams } from "@/lib/ai/generate";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const body = (await request.json().catch(() => null)) as Partial<GenerateParams> | null;
   if (!body) return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
 

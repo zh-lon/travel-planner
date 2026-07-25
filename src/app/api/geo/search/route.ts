@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { searchPois } from "@/lib/geo";
+import { requireUser } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 // POI 搜索代理：?keywords=宽窄巷子&city=成都
 export async function GET(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const { searchParams } = new URL(request.url);
   const keywords = (searchParams.get("keywords") ?? "").trim();
   const city = (searchParams.get("city") ?? "").trim();

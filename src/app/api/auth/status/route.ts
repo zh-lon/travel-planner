@@ -1,12 +1,15 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { AUTH_COOKIE, authEnabled, verifyToken } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { currentUser, publicUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
-  const enabled = authEnabled();
-  const authed = enabled
-    ? await verifyToken(request.cookies.get(AUTH_COOKIE)?.value)
-    : true;
-  return NextResponse.json({ enabled, authed });
+export async function GET(request: Request) {
+  const needSetup = (await prisma.user.count()) === 0;
+  const user = needSetup ? null : await currentUser(request);
+  return NextResponse.json({
+    needSetup,
+    authed: !!user,
+    user: user ? publicUser(user) : null,
+  });
 }

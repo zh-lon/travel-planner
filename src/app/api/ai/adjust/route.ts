@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { buildAdjustPrompt, planStreamResponse } from "@/lib/ai/generate";
+import { requireTripEditByChild, requireUser } from "@/lib/session";
 import type { ItineraryItemT, TripDetail } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const body = (await request.json().catch(() => null)) as {
     tripId?: unknown;
     instruction?: unknown;
@@ -14,6 +17,8 @@ export async function POST(request: Request) {
   const instruction = typeof body?.instruction === "string" ? body.instruction.trim() : "";
   if (!tripId) return NextResponse.json({ error: "缺少行程 ID" }, { status: 400 });
   if (!instruction) return NextResponse.json({ error: "请填写调整要求" }, { status: 400 });
+  const denied = await requireTripEditByChild(user, tripId);
+  if (denied) return denied;
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },

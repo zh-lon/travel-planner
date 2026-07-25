@@ -26,6 +26,7 @@ interface BoardProps {
   dayCount: number;
   items: ItineraryItemT[];
   weather?: Record<number, string>; // dayIndex → 天气描述
+  readOnly?: boolean; // 只读共享：隐藏所有编辑入口并禁用拖拽
   onAddItem: (dayIndex: number) => void;
   onEditItem: (item: ItineraryItemT) => void;
   onReorder: (items: ItineraryItemT[]) => void;
@@ -77,7 +78,12 @@ function ItemCardBody({
       <span
         {...handleProps}
         onClick={(e) => e.stopPropagation()}
-        style={{ cursor: "grab", color: "#999", touchAction: "none" }}
+        style={{
+          cursor: "grab",
+          color: "#999",
+          touchAction: "none",
+          display: handleProps ? undefined : "none",
+        }}
       >
         <HolderOutlined />
       </span>
@@ -122,9 +128,11 @@ function ItemCardBody({
 
 function SortableItemCard({
   item,
+  readOnly,
   onEdit,
 }: {
   item: ItineraryItemT;
+  readOnly?: boolean;
   onEdit: (item: ItineraryItemT) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -142,7 +150,9 @@ function SortableItemCard({
       <ItemCardBody
         item={item}
         onClick={() => onEdit(item)}
-        handleProps={{ ...attributes, ...listeners } as HTMLAttributes<HTMLSpanElement>}
+        handleProps={
+          readOnly ? undefined : ({ ...attributes, ...listeners } as HTMLAttributes<HTMLSpanElement>)
+        }
       />
     </div>
   );
@@ -154,6 +164,7 @@ function DayColumn({
   date,
   items,
   weather,
+  readOnly,
   onAddItem,
   onEditItem,
   onInsertDay,
@@ -164,6 +175,7 @@ function DayColumn({
   date: Dayjs;
   items: ItineraryItemT[];
   weather?: string;
+  readOnly?: boolean;
   onAddItem: (dayIndex: number) => void;
   onEditItem: (item: ItineraryItemT) => void;
   onInsertDay: (dayIndex: number) => void;
@@ -195,23 +207,25 @@ function DayColumn({
             <div style={{ fontSize: 12, color: "#8c8c8c", marginTop: 2 }}>{weather}</div>
           )}
         </div>
-        <Dropdown
-          trigger={["click"]}
-          menu={{
-            items: [
-              { key: "before", label: "在这天前插入一天" },
-              { key: "after", label: "在这天后插入一天" },
-              { type: "divider" as const },
-              { key: "remove", label: "删除这一天", danger: true, disabled: dayCount <= 1 },
-            ],
-            onClick: ({ key }) => {
-              if (key === "remove") onRemoveDay(dayIndex);
-              else onInsertDay(key === "before" ? dayIndex : dayIndex + 1);
-            },
-          }}
-        >
-          <Button type="text" size="small" icon={<MoreOutlined />} />
-        </Dropdown>
+        {!readOnly && (
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                { key: "before", label: "在这天前插入一天" },
+                { key: "after", label: "在这天后插入一天" },
+                { type: "divider" as const },
+                { key: "remove", label: "删除这一天", danger: true, disabled: dayCount <= 1 },
+              ],
+              onClick: ({ key }) => {
+                if (key === "remove") onRemoveDay(dayIndex);
+                else onInsertDay(key === "before" ? dayIndex : dayIndex + 1);
+              },
+            }}
+          >
+            <Button type="text" size="small" icon={<MoreOutlined />} />
+          </Dropdown>
+        )}
       </div>
       <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
         <div
@@ -219,7 +233,7 @@ function DayColumn({
           style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, minHeight: 48 }}
         >
           {items.map((item) => (
-            <SortableItemCard key={item.id} item={item} onEdit={onEditItem} />
+            <SortableItemCard key={item.id} item={item} readOnly={readOnly} onEdit={onEditItem} />
           ))}
           {items.length === 0 && (
             <div
@@ -237,15 +251,17 @@ function DayColumn({
           )}
         </div>
       </SortableContext>
-      <Button
-        type="dashed"
-        block
-        icon={<PlusOutlined />}
-        style={{ marginTop: 10 }}
-        onClick={() => onAddItem(dayIndex)}
-      >
-        添加行程项
-      </Button>
+      {!readOnly && (
+        <Button
+          type="dashed"
+          block
+          icon={<PlusOutlined />}
+          style={{ marginTop: 10 }}
+          onClick={() => onAddItem(dayIndex)}
+        >
+          添加行程项
+        </Button>
+      )}
     </div>
   );
 }
@@ -255,6 +271,7 @@ export default function ItineraryBoard({
   dayCount,
   items,
   weather,
+  readOnly,
   onAddItem,
   onEditItem,
   onReorder,
@@ -339,7 +356,7 @@ export default function ItineraryBoard({
 
   return (
     <DndContext
-      sensors={sensors}
+      sensors={readOnly ? [] : sensors}
       collisionDetection={closestCorners}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
@@ -355,32 +372,35 @@ export default function ItineraryBoard({
             date={startDate.add(dayIndex, "day")}
             items={colItems}
             weather={weather?.[dayIndex]}
+            readOnly={readOnly}
             onAddItem={onAddItem}
             onEditItem={onEditItem}
             onInsertDay={onInsertDay}
             onRemoveDay={onRemoveDay}
           />
         ))}
-        <div
-          onClick={() => onInsertDay(dayCount)}
-          style={{
-            width: 52,
-            flexShrink: 0,
-            border: "1px dashed #d9d9d9",
-            borderRadius: 8,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            cursor: "pointer",
-            color: "#999",
-            minHeight: 160,
-          }}
-        >
-          <PlusOutlined />
-          <span style={{ writingMode: "vertical-lr", letterSpacing: 4, fontSize: 12 }}>添加一天</span>
-        </div>
+        {!readOnly && (
+          <div
+            onClick={() => onInsertDay(dayCount)}
+            style={{
+              width: 52,
+              flexShrink: 0,
+              border: "1px dashed #d9d9d9",
+              borderRadius: 8,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              cursor: "pointer",
+              color: "#999",
+              minHeight: 160,
+            }}
+          >
+            <PlusOutlined />
+            <span style={{ writingMode: "vertical-lr", letterSpacing: 4, fontSize: 12 }}>添加一天</span>
+          </div>
+        )}
       </div>
       <DragOverlay>
         {activeItem ? (

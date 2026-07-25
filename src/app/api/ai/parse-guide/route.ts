@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { buildGuidePrompt, planStreamResponse, type GuideParams } from "@/lib/ai/generate";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 // 解析旅行攻略文本（如小红书笔记）为结构化行程
 export async function POST(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const body = (await request.json().catch(() => null)) as Partial<GuideParams> | null;
   if (!body) return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
 

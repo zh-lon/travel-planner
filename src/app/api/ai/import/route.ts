@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { aiPlanSchema } from "@/lib/ai/schema";
+import { requireUser } from "@/lib/session";
 import { parseTripBody } from "@/lib/trips";
 import { ITEM_TYPE_VALUES } from "@/types/constants";
 import type { AiPlan } from "@/types";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 
 // 把 AI 方案导入为新行程
 export async function POST(request: Request) {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
 
@@ -22,7 +25,7 @@ export async function POST(request: Request) {
   }
   const plan = body.plan as AiPlan;
 
-  const trip = await prisma.trip.create({ data: parsedTrip.data });
+  const trip = await prisma.trip.create({ data: { ...parsedTrip.data, ownerId: user.id } });
   const itemsData = plan.days.flatMap((day, dayIndex) =>
     day.items.map((item, idx) => ({
       tripId: trip.id,

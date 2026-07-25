@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 // 高德 Web 服务 Key 连通性测试：用地理编码接口查询一个固定地址验证 Key 是否可用
 export async function POST(request: Request) {
+  const admin = await requireAdmin(request);
+  if (admin instanceof NextResponse) return admin;
   const body = (await request.json().catch(() => ({}))) as { webKey?: string };
   const saved = await getSettings();
   const webKey = (body.webKey || saved["amap.webKey"] || "").trim();

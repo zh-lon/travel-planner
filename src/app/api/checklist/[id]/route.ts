@@ -1,12 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireTripEditByChild, requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+async function guard(request: Request, itemId: string): Promise<NextResponse | null> {
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const item = await prisma.checklistItem.findUnique({
+    where: { id: itemId },
+    select: { tripId: true },
+  });
+  if (!item) return NextResponse.json({ error: "条目不存在" }, { status: 404 });
+  return requireTripEditByChild(user, item.tripId);
+}
+
 export async function PUT(request: Request, { params }: Params) {
   const { id } = await params;
+  const denied = await guard(request, id);
+  if (denied) return denied;
   const body = (await request.json().catch(() => null)) as {
     text?: unknown;
     checked?: unknown;
@@ -22,8 +36,10 @@ export async function PUT(request: Request, { params }: Params) {
   return NextResponse.json(item);
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   const { id } = await params;
+  const denied = await guard(request, id);
+  if (denied) return denied;
   const deleted = await prisma.checklistItem.delete({ where: { id } }).catch(() => null);
   if (!deleted) return NextResponse.json({ error: "条目不存在" }, { status: 404 });
   return NextResponse.json({ ok: true });

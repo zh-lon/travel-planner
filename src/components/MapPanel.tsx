@@ -46,6 +46,7 @@ interface Props {
   items: ItineraryItemT[];
   startDate: Dayjs;
   dayCount: number;
+  readOnly?: boolean; // 只读共享：隐藏定位编辑入口、禁用交通方式修改
   onEditItem: (item: ItineraryItemT) => void;
   onItemsChanged?: () => void;
 }
@@ -118,7 +119,7 @@ function searchRoute(AMap: any, mode: SegMode, from: [number, number], to: [numb
   });
 }
 
-export default function MapPanel({ items, dayCount, onEditItem, onItemsChanged }: Props) {
+export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItemsChanged }: Props) {
   const { message } = App.useApp();
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,10 +164,10 @@ export default function MapPanel({ items, dayCount, onEditItem, onItemsChanged }
     let disposed = false;
     (async () => {
       try {
-        const res = await fetch("/api/settings");
-        const settings = (await res.json()) as Record<string, string | undefined>;
-        const jsKey = settings["amap.jsKey"]?.trim();
-        const securityCode = settings["amap.securityCode"]?.trim();
+        const res = await fetch("/api/config/public");
+        const cfg = (await res.json()) as { amapJsKey?: string; amapSecurityCode?: string };
+        const jsKey = cfg.amapJsKey?.trim();
+        const securityCode = cfg.amapSecurityCode?.trim();
         if (!jsKey) {
           if (!disposed) setStatus("nokey");
           return;
@@ -635,6 +636,7 @@ export default function MapPanel({ items, dayCount, onEditItem, onItemsChanged }
                             <Select
                               size="small"
                               variant="borderless"
+                              disabled={readOnly}
                               value={
                                 (item.id in overrides
                                   ? overrides[item.id]
@@ -711,22 +713,26 @@ export default function MapPanel({ items, dayCount, onEditItem, onItemsChanged }
                             style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0 }}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Tooltip title="在地图上点选新位置">
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<PushpinOutlined />}
-                                onClick={() => startPick(item)}
-                              />
-                            </Tooltip>
-                            <Tooltip title="编辑（可搜索重新定位）">
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<EditOutlined />}
-                                onClick={() => onEditItem(item)}
-                              />
-                            </Tooltip>
+                            {!readOnly && (
+                              <>
+                                <Tooltip title="在地图上点选新位置">
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<PushpinOutlined />}
+                                    onClick={() => startPick(item)}
+                                  />
+                                </Tooltip>
+                                <Tooltip title="编辑（可搜索重新定位）">
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<EditOutlined />}
+                                    onClick={() => onEditItem(item)}
+                                  />
+                                </Tooltip>
+                              </>
+                            )}
                             {located ? (
                               <AimOutlined style={{ color: "#52c41a", marginLeft: 4 }} />
                             ) : (

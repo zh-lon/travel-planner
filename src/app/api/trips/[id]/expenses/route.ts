@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { canEditRole, requireUser, tripAccess } from "@/lib/session";
 import { EXPENSE_CATEGORY_VALUES } from "@/types/constants";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,13 @@ function parseParticipants(raw: string | null): string[] {
   }
 }
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const { id } = await params;
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const access = await tripAccess(id, user);
+  if (!access) return NextResponse.json({ error: "行程不存在或无权访问" }, { status: 404 });
+
   const rows = await prisma.expense.findMany({
     where: { tripId: id },
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -27,8 +33,13 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const trip = await prisma.trip.findUnique({ where: { id } });
-  if (!trip) return NextResponse.json({ error: "行程不存在" }, { status: 404 });
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const access = await tripAccess(id, user);
+  if (!access) return NextResponse.json({ error: "行程不存在或无权访问" }, { status: 404 });
+  if (!canEditRole(access.role)) {
+    return NextResponse.json({ error: "该行程对你是只读共享" }, { status: 403 });
+  }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });

@@ -1,12 +1,20 @@
 import { prisma } from "@/lib/db";
+import { requireUser, tripAccess } from "@/lib/session";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
 // 导出整个行程（含日程、开销、清单）为 JSON 备份文件
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const { id } = await params;
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const access = await tripAccess(id, user);
+  if (!access) {
+    return NextResponse.json({ error: "行程不存在或无权访问" }, { status: 404 });
+  }
   const trip = await prisma.trip.findUnique({
     where: { id },
     include: {

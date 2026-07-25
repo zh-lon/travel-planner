@@ -137,65 +137,78 @@ export default function HomePage() {
           />
         ) : (
           <Row gutter={[16, 16]}>
-            {trips.map((trip) => (
-              <Col xs={24} sm={12} lg={8} key={trip.id}>
-                <Card
-                  hoverable
-                  size="small"
-                  onClick={() => router.push(`/trips/${trip.id}`)}
-                  actions={[
-                    <span
-                      key="edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditing(trip);
-                        setModalOpen(true);
-                      }}
-                    >
-                      <EditOutlined /> 编辑
-                    </span>,
-                    <Popconfirm
-                      key="delete"
-                      title="删除行程"
-                      description="将同时删除日程、开销与清单"
-                      okText="删除"
-                      okButtonProps={{ danger: true }}
-                      cancelText="取消"
-                      onConfirm={(e) => {
-                        e?.stopPropagation();
-                        handleDelete(trip.id);
-                      }}
-                      onCancel={(e) => e?.stopPropagation()}
-                    >
-                      <span onClick={(e) => e.stopPropagation()}>
-                        <DeleteOutlined /> 删除
+            {trips.map((trip) => {
+              const isOwner = (trip.access?.role ?? "owner") === "owner";
+              return (
+                <Col xs={24} sm={12} lg={8} key={trip.id}>
+                  <Card
+                    hoverable
+                    size="small"
+                    onClick={() => router.push(`/trips/${trip.id}`)}
+                    actions={
+                      isOwner
+                        ? [
+                            <span
+                              key="edit"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditing(trip);
+                                setModalOpen(true);
+                              }}
+                            >
+                              <EditOutlined /> 编辑
+                            </span>,
+                            <Popconfirm
+                              key="delete"
+                              title="删除行程"
+                              description="将同时删除日程、开销与清单"
+                              okText="删除"
+                              okButtonProps={{ danger: true }}
+                              cancelText="取消"
+                              onConfirm={(e) => {
+                                e?.stopPropagation();
+                                handleDelete(trip.id);
+                              }}
+                              onCancel={(e) => e?.stopPropagation()}
+                            >
+                              <span onClick={(e) => e.stopPropagation()}>
+                                <DeleteOutlined /> 删除
+                              </span>
+                            </Popconfirm>,
+                          ]
+                        : undefined
+                    }
+                  >
+                    <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 8 }}>
+                      {trip.title}
+                    </Typography.Title>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <span>
+                        <EnvironmentOutlined style={{ color: "#1677ff", marginRight: 6 }} />
+                        <Tag color="blue">{trip.destination}</Tag>
+                        {!isOwner && (
+                          <Tag color={trip.access?.role === "edit" ? "processing" : "default"}>
+                            {(trip.owner?.displayName || trip.owner?.username || "他人") + " 共享"}
+                            {trip.access?.role === "edit" ? " · 可编辑" : " · 只读"}
+                          </Tag>
+                        )}
                       </span>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 8 }}>
-                    {trip.title}
-                  </Typography.Title>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <span>
-                      <EnvironmentOutlined style={{ color: "#1677ff", marginRight: 6 }} />
-                      <Tag color="blue">{trip.destination}</Tag>
-                    </span>
-                    <Typography.Text type="secondary">
-                      <CalendarOutlined style={{ marginRight: 6 }} />
-                      {dayjs(trip.startDate).format("YYYY/M/D")} -{" "}
-                      {dayjs(trip.endDate).format("YYYY/M/D")} · {dayCount(trip)} 天
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      {trip._count?.items ?? 0} 个行程项
-                      {trip.budgetTotal != null
-                        ? ` · 预算 ¥${trip.budgetTotal.toLocaleString()}`
-                        : ""}
-                    </Typography.Text>
-                  </div>
-                </Card>
-              </Col>
-            ))}
+                      <Typography.Text type="secondary">
+                        <CalendarOutlined style={{ marginRight: 6 }} />
+                        {dayjs(trip.startDate).format("YYYY/M/D")} -{" "}
+                        {dayjs(trip.endDate).format("YYYY/M/D")} · {dayCount(trip)} 天
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {trip._count?.items ?? 0} 个行程项
+                        {trip.budgetTotal != null
+                          ? ` · 预算 ¥${trip.budgetTotal.toLocaleString()}`
+                          : ""}
+                      </Typography.Text>
+                    </div>
+                  </Card>
+                </Col>
+              );
+            })}
           </Row>
         )}
       </Card>

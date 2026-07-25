@@ -1,6 +1,7 @@
-import { createHash, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
-import { AUTH_COOKIE, authEnabled, authPassword, createToken } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { AUTH_COOKIE, createToken } from "@/lib/auth";
+import { verifyPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
@@ -14,17 +15,7 @@ function clientIp(request: Request): string {
   return fwd?.split(",")[0]?.trim() || "local";
 }
 
-function passwordMatches(input: string): boolean {
-  const a = createHash("sha256").update(input).digest();
-  const b = createHash("sha256").update(authPassword()).digest();
-  return timingSafeEqual(a, b);
-}
-
 export async function POST(request: Request) {
-  if (!authEnabled()) {
-    return NextResponse.json({ error: "未启用登录认证" }, { status: 400 });
-  }
-
   const ip = clientIp(request);
   const record = failMap.get(ip);
   if (record && record.lockedUntil > Date.now()) {
@@ -32,21 +23,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `失败次数过多，请 ${wait} 秒后重试` }, { status: 429 });
   }
 
-  const body = (await request.json().catch(() => null)) as { password?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    username?: unknown;
+    password?: unknown;
+  } | null;
+  const username = typeof body?.username === "string" ? body.username.trim() : "";
   const password = typeof body?.password === "string" ? body.password : "";
 
-  if (!password || !passwordMatches(password)) {
+  const user = username ? await prisma.user.findUnique({ where: { username } }) : null;
+  const ok = !!user && !user.disabled && !!password && verifyPassword(password, user.passwordHash);
+
+  if (!ok) {
     const fails = (record?.fails ?? 0) + 1;
-    failMap.set(ip, {
-      fails,
-      lockedUntil: fails >= MAX_FAILS ? Date.now() + LOCK_MS : 0,
-    });
+    failMap.set(ip, { fails, lockedUntil: fails >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
     await new Promise((r) => setTimeout(r, 600)); // 拖慢爆破
-    return NextResponse.json({ error: "密码错误" }, { status: 401 });
+    return NextResponse.json(
+      { error: user?.disabled ? "账号已被禁用" : "用户名或密码错误" },
+      { status: 401 },
+    );
   }
 
   failMap.delete(ip);
-  const token = await createToken(30);
+  const token = await createToken(user!.id, 30);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,

@@ -18,9 +18,10 @@ function fmtMoney(n: number): string {
 
 interface Props {
   trip: TripDetail;
+  readOnly?: boolean; // 只读共享：隐藏记账与编辑入口
 }
 
-export default function ExpensesPanel({ trip }: Props) {
+export default function ExpensesPanel({ trip, readOnly }: Props) {
   const { message } = App.useApp();
   const [expenses, setExpenses] = useState<ExpenseT[]>([]);
   const [loading, setLoading] = useState(true);
@@ -234,13 +235,15 @@ export default function ExpensesPanel({ trip }: Props) {
         size="small"
         title="记账明细"
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setModal({ open: true, expense: null })}
-          >
-            记一笔
-          </Button>
+          !readOnly && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setModal({ open: true, expense: null })}
+            >
+              记一笔
+            </Button>
+          )
         }
       >
         {expenses.length === 0 && !loading ? (
@@ -291,32 +294,38 @@ export default function ExpensesPanel({ trip }: Props) {
                 ellipsis: true,
                 render: (v: string | null) => trip.items.find((i) => i.id === v)?.title ?? "—",
               },
-              {
-                title: "操作",
-                width: 110,
-                render: (_: unknown, record: ExpenseT) => (
-                  <>
-                    <a onClick={() => setModal({ open: true, expense: record })}>编辑</a>
-                    <Popconfirm
-                      title="删除这条记录？"
-                      okText="删除"
-                      okButtonProps={{ danger: true }}
-                      cancelText="取消"
-                      onConfirm={async () => {
-                        const res = await fetch(`/api/expenses/${record.id}`, { method: "DELETE" });
-                        if (res.ok) {
-                          message.success("已删除");
-                          load();
-                        } else {
-                          message.error("删除失败");
-                        }
-                      }}
-                    >
-                      <a style={{ marginLeft: 12, color: "#cf1322" }}>删除</a>
-                    </Popconfirm>
-                  </>
-                ),
-              },
+              ...(readOnly
+                ? []
+                : [
+                    {
+                      title: "操作",
+                      width: 110,
+                      render: (_: unknown, record: ExpenseT) => (
+                        <>
+                          <a onClick={() => setModal({ open: true, expense: record })}>编辑</a>
+                          <Popconfirm
+                            title="删除这条记录？"
+                            okText="删除"
+                            okButtonProps={{ danger: true }}
+                            cancelText="取消"
+                            onConfirm={async () => {
+                              const res = await fetch(`/api/expenses/${record.id}`, {
+                                method: "DELETE",
+                              });
+                              if (res.ok) {
+                                message.success("已删除");
+                                load();
+                              } else {
+                                message.error("删除失败");
+                              }
+                            }}
+                          >
+                            <a style={{ marginLeft: 12, color: "#cf1322" }}>删除</a>
+                          </Popconfirm>
+                        </>
+                      ),
+                    },
+                  ]),
             ]}
             summary={() => (
               <Table.Summary.Row>

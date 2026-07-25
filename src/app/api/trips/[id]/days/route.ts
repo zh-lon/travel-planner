@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { canEditRole, requireUser, tripAccess } from "@/lib/session";
 import { dayCountOf } from "@/lib/trips";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +14,14 @@ const DAY_MS = 86400000;
 // remove：删除某天，该天安排并入相邻天（第 1 天并入下一天，其余并入前一天），结束日期 -1
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const trip = await prisma.trip.findUnique({ where: { id } });
-  if (!trip) return NextResponse.json({ error: "行程不存在" }, { status: 404 });
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  const access = await tripAccess(id, user);
+  if (!access) return NextResponse.json({ error: "行程不存在或无权访问" }, { status: 404 });
+  if (!canEditRole(access.role)) {
+    return NextResponse.json({ error: "该行程对你是只读共享" }, { status: 403 });
+  }
+  const trip = access.trip;
 
   const body = (await request.json().catch(() => null)) as {
     action?: unknown;

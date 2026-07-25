@@ -1,12 +1,14 @@
 # 部署指南
 
-把旅行规划工具部署到自己的服务器（Linux VPS / 家用 NAS 均可），并启用访问密码。
+把旅行规划工具部署到自己的服务器（Linux VPS / 家用 NAS 均可）。
 
-## 登录认证说明
+## 多用户与登录说明
 
-- 认证由环境变量 **`AUTH_PASSWORD`** 控制：设置后全站（页面 + API）需要登录，密码正确后发放 30 天有效的 HttpOnly Cookie
-- **不设置该变量则完全免登录**（适合本机/可信内网使用），本地开发体验不受影响
-- 修改密码：改环境变量并重启服务即可，所有旧登录状态自动失效（Cookie 签名密钥由密码派生）
+- **首次访问**会引导创建**管理员账号**（数据库中已有的历史行程会自动归属给它）
+- 系统**不开放注册**：其他用户由管理员在「管理」页创建，账号密码线下告知
+- 每个用户只能看到自己的行程和别人共享给自己的行程；共享分**只读**和**可编辑**两档
+- 管理员额外拥有：「设置」页（AI/地图/天气 Key，全局共用）、「管理」页（用户与全部行程管理）
+- 环境变量 **`AUTH_SECRET`**：会话签名密钥，部署时必须设置为随机长字符串（`openssl rand -hex 32`）；更换它会使所有登录状态失效
 - 登录接口带失败限速（单 IP 连续错 5 次锁 60 秒）
 
 ## 方式一：Docker Compose（推荐）
@@ -17,11 +19,11 @@
 git clone https://github.com/zh-lon/travel-planner.git
 cd travel-planner
 cp .env.example .env
-vi .env                      # 把 AUTH_PASSWORD 改成强密码
+vi .env                      # 把 AUTH_SECRET 改成随机长字符串
 docker compose up -d --build # 首次构建约几分钟
 ```
 
-访问 `http://服务器IP:3000`，输入访问密码登录，然后到「设置」页配置 AI 服务与高德 Key。
+访问 `http://服务器IP:3000` → 创建管理员账号 → 「设置」页配置 AI 服务与高德 Key → 「管理」页给亲友创建账号。
 
 常用操作：
 
@@ -42,12 +44,13 @@ cp data/app.db backup/app-$(date +%F).db   # 备份数据（所有数据都在 d
 ```bash
 git clone https://github.com/zh-lon/travel-planner.git
 cd travel-planner
+cp .env.example .env && vi .env    # 设置 AUTH_SECRET
 npm ci
 npm run build
 npx prisma db push
 npm i -g pm2
-AUTH_PASSWORD=你的强密码 pm2 start npm --name travel-planner -- start
-pm2 save && pm2 startup      # 开机自启
+pm2 start npm --name travel-planner -- start
+pm2 save && pm2 startup            # 开机自启
 ```
 
 更新：`git pull && npm ci && npm run build && npx prisma db push && pm2 restart travel-planner`
@@ -80,6 +83,6 @@ sudo certbot --nginx -d travel.example.com   # 自动配置 HTTPS
 ## 注意事项
 
 1. **域名白名单**：公网部署后，建议到高德控制台给「Web端(JS API)」Key 绑定你的域名白名单，防止 Key 被盗用
-2. **配额**：高德个人版 POI 搜索约 100 次/天；AI 生成消耗你模型服务的 token——密码保护就是为了防陌生人消耗你的配额
-3. **备份**：所有数据（含各类 Key 配置）都在 `data/app.db` 一个文件里，定期备份它即可；应用内也可按行程导出 JSON
+2. **配额**：AI/地图 Key 是全局共用的（管理员在设置页配置），所有用户的 AI 生成都消耗同一份 token、地图搜索共享同一份配额——只给信任的人创建账号
+3. **备份**：所有数据（用户、行程、Key 配置）都在 `data/app.db` 一个文件里，定期备份它即可；应用内也可按行程导出 JSON
 4. **备案**：使用国内服务器 + 域名对外提供 Web 服务需要 ICP 备案；仅 IP 访问或使用境外服务器则不需要

@@ -9,6 +9,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   RobotOutlined,
+  ShareAltOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import AiAdjustModal from "@/components/AiAdjustModal";
@@ -17,6 +18,7 @@ import ExpensesPanel from "@/components/ExpensesPanel";
 import ItemFormModal from "@/components/ItemFormModal";
 import ItineraryBoard from "@/components/ItineraryBoard";
 import MapPanel from "@/components/MapPanel";
+import ShareModal from "@/components/ShareModal";
 import TripFormModal from "@/components/TripFormModal";
 import { downloadText, tripToMarkdown } from "@/lib/export";
 import type { ExpenseT, ItineraryItemT, TripDetail } from "@/types";
@@ -29,6 +31,7 @@ export default function TripDetailPage() {
   const [loading, setLoading] = useState(true);
   const [tripModalOpen, setTripModalOpen] = useState(false);
   const [aiAdjustOpen, setAiAdjustOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [weather, setWeather] = useState<Record<number, string>>({});
   const [itemModal, setItemModal] = useState<{
     open: boolean;
@@ -195,6 +198,16 @@ export default function TripDetailPage() {
   const startDay = dayjs(trip.startDate);
   const dayCount = dayjs(trip.endDate).diff(startDay, "day") + 1;
   const estimatedTotal = trip.items.reduce((sum, i) => sum + (i.estimatedCost ?? 0), 0);
+  const role = trip.access?.role ?? "owner";
+  const isOwner = role === "owner";
+  const readOnly = role === "read";
+  const openItemModal = (dayIndex: number, item: ItineraryItemT | null) => {
+    if (readOnly) {
+      message.info("该行程对你是只读共享");
+      return;
+    }
+    setItemModal({ open: true, dayIndex, item });
+  };
   const dayLabel = `第 ${itemModal.dayIndex + 1} 天 · ${startDay
     .add(itemModal.dayIndex, "day")
     .format("M月D日")}`;
@@ -211,6 +224,12 @@ export default function TripDetailPage() {
               {trip.title}
             </Typography.Title>
             <Tag color="blue">{trip.destination}</Tag>
+            {!isOwner && (
+              <Tag color={readOnly ? "default" : "processing"}>
+                {(trip.owner?.displayName || trip.owner?.username || "他人") + " 共享"}
+                {readOnly ? " · 只读" : " · 可编辑"}
+              </Tag>
+            )}
           </Space>
           <Space wrap size="middle">
             <Typography.Text type="secondary">
@@ -227,9 +246,11 @@ export default function TripDetailPage() {
                 预估合计 ¥{estimatedTotal.toLocaleString()}
               </Typography.Text>
             )}
-            <Button size="small" icon={<RobotOutlined />} onClick={() => setAiAdjustOpen(true)}>
-              AI 调整
-            </Button>
+            {!readOnly && (
+              <Button size="small" icon={<RobotOutlined />} onClick={() => setAiAdjustOpen(true)}>
+                AI 调整
+              </Button>
+            )}
             <Dropdown
               menu={{
                 items: [
@@ -244,21 +265,31 @@ export default function TripDetailPage() {
                 导出
               </Button>
             </Dropdown>
-            <Button size="small" icon={<EditOutlined />} onClick={() => setTripModalOpen(true)}>
-              编辑
-            </Button>
-            <Popconfirm
-              title="删除整个行程？"
-              description="将同时删除日程、开销与清单"
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              cancelText="取消"
-              onConfirm={handleDeleteTrip}
-            >
-              <Button size="small" danger icon={<DeleteOutlined />}>
-                删除
+            {isOwner && (
+              <Button size="small" icon={<ShareAltOutlined />} onClick={() => setShareOpen(true)}>
+                共享
+                {trip.shares && trip.shares.length > 0 ? `（${trip.shares.length}）` : ""}
               </Button>
-            </Popconfirm>
+            )}
+            {isOwner && (
+              <Button size="small" icon={<EditOutlined />} onClick={() => setTripModalOpen(true)}>
+                编辑
+              </Button>
+            )}
+            {isOwner && (
+              <Popconfirm
+                title="删除整个行程？"
+                description="将同时删除日程、开销与清单"
+                okText="删除"
+                okButtonProps={{ danger: true }}
+                cancelText="取消"
+                onConfirm={handleDeleteTrip}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
+            )}
           </Space>
           {trip.notes && <Typography.Text type="secondary">备注：{trip.notes}</Typography.Text>}
         </Space>
@@ -277,8 +308,9 @@ export default function TripDetailPage() {
                   dayCount={dayCount}
                   items={trip.items}
                   weather={weather}
-                  onAddItem={(dayIndex) => setItemModal({ open: true, dayIndex, item: null })}
-                  onEditItem={(item) => setItemModal({ open: true, dayIndex: item.dayIndex, item })}
+                  readOnly={readOnly}
+                  onAddItem={(dayIndex) => openItemModal(dayIndex, null)}
+                  onEditItem={(item) => openItemModal(item.dayIndex, item)}
                   onReorder={handleReorder}
                   onInsertDay={handleInsertDay}
                   onRemoveDay={handleRemoveDay}
@@ -293,7 +325,8 @@ export default function TripDetailPage() {
                   items={trip.items}
                   startDate={startDay}
                   dayCount={dayCount}
-                  onEditItem={(item) => setItemModal({ open: true, dayIndex: item.dayIndex, item })}
+                  readOnly={readOnly}
+                  onEditItem={(item) => openItemModal(item.dayIndex, item)}
                   onItemsChanged={load}
                 />
               ),
@@ -301,12 +334,12 @@ export default function TripDetailPage() {
             {
               key: "expenses",
               label: "开销",
-              children: <ExpensesPanel trip={trip} />,
+              children: <ExpensesPanel trip={trip} readOnly={readOnly} />,
             },
             {
               key: "checklist",
               label: "行前清单",
-              children: <ChecklistPanel tripId={trip.id} />,
+              children: <ChecklistPanel tripId={trip.id} readOnly={readOnly} />,
             },
           ]}
         />
@@ -343,6 +376,7 @@ export default function TripDetailPage() {
           load();
         }}
       />
+      <ShareModal open={shareOpen} tripId={trip.id} onCancel={() => { setShareOpen(false); load(); }} />
     </Space>
   );
 }

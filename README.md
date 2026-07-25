@@ -29,8 +29,8 @@
 ### 🧰 实用工具
 - 行前清单（常用物品一键添加）
 - 导出 Markdown / JSON 备份（可再导入恢复）/ 打印页面（另存 PDF）
-- 亲友局域网访问（`npm run dev:lan`）
-- **服务器部署 + 访问密码**：Docker Compose 一键部署，设置 `AUTH_PASSWORD` 即启用全站登录（不设则免登录），见 [DEPLOY.md](DEPLOY.md)
+- **多用户**：管理员创建账号（不开放注册），数据按用户隔离，行程可共享给其他用户（只读/可编辑），内置用户与行程管理页
+- **服务器部署**：Docker Compose 一键部署，见 [DEPLOY.md](DEPLOY.md)
 
 ## 🛠️ 技术栈
 
@@ -49,12 +49,13 @@
 环境要求：Node.js 20+
 
 ```bash
-npm install        # 安装依赖（自动生成 Prisma 客户端）
-npm run db:push    # 初始化 SQLite 数据库（首次运行）
-npm run dev        # 启动，访问 http://localhost:3000
+cp .env.example .env   # 本地保持默认即可；部署时需修改 AUTH_SECRET
+npm install            # 安装依赖（自动生成 Prisma 客户端）
+npm run db:push        # 初始化 SQLite 数据库（首次运行）
+npm run dev            # 启动，访问 http://localhost:3000
 ```
 
-首次使用请进入「设置」页配置：
+首次访问会引导创建管理员账号，之后用管理员进入「设置」页配置：
 
 | 配置 | 说明 | 申请入口 |
 |---|---|---|

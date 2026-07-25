@@ -18,7 +18,13 @@ const PRESET_ITEMS = [
   "水杯",
 ];
 
-export default function ChecklistPanel({ tripId }: { tripId: string }) {
+export default function ChecklistPanel({
+  tripId,
+  readOnly,
+}: {
+  tripId: string;
+  readOnly?: boolean;
+}) {
   const { message } = App.useApp();
   const [items, setItems] = useState<ChecklistItemT[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,29 +101,33 @@ export default function ChecklistPanel({ tripId }: { tripId: string }) {
           </div>
         )}
 
-        <Space.Compact style={{ width: "100%" }}>
-          <Input
-            placeholder="添加物品或待办，回车确认"
-            value={text}
-            maxLength={60}
-            onChange={(e) => setText(e.target.value)}
-            onPressEnter={() => text.trim() && add({ text })}
-          />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            loading={adding}
-            onClick={() => text.trim() && add({ text })}
-          >
-            添加
-          </Button>
-        </Space.Compact>
+        {!readOnly && (
+          <Space.Compact style={{ width: "100%" }}>
+            <Input
+              placeholder="添加物品或待办，回车确认"
+              value={text}
+              maxLength={60}
+              onChange={(e) => setText(e.target.value)}
+              onPressEnter={() => text.trim() && add({ text })}
+            />
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              loading={adding}
+              onClick={() => text.trim() && add({ text })}
+            >
+              添加
+            </Button>
+          </Space.Compact>
+        )}
 
         {items.length === 0 ? (
           <Empty description="清单为空" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-            <Button onClick={() => add({ texts: PRESET_ITEMS })} loading={adding}>
-              一键添加常用物品
-            </Button>
+            {!readOnly && (
+              <Button onClick={() => add({ texts: PRESET_ITEMS })} loading={adding}>
+                一键添加常用物品
+              </Button>
+            )}
           </Empty>
         ) : (
           <div>
@@ -132,7 +142,11 @@ export default function ChecklistPanel({ tripId }: { tripId: string }) {
                   borderBottom: "1px solid #f5f5f5",
                 }}
               >
-                <Checkbox checked={item.checked} onChange={(e) => toggle(item, e.target.checked)}>
+                <Checkbox
+                  checked={item.checked}
+                  disabled={readOnly}
+                  onChange={(e) => toggle(item, e.target.checked)}
+                >
                   <span
                     style={
                       item.checked ? { textDecoration: "line-through", color: "#bbb" } : undefined
@@ -142,19 +156,23 @@ export default function ChecklistPanel({ tripId }: { tripId: string }) {
                   </span>
                 </Checkbox>
                 <span style={{ flex: 1 }} />
-                <Popconfirm title="删除该条目？" okText="删除" cancelText="取消" onConfirm={() => remove(item.id)}>
-                  <Button type="text" size="small" icon={<DeleteOutlined />} />
-                </Popconfirm>
+                {!readOnly && (
+                  <Popconfirm title="删除该条目？" okText="删除" cancelText="取消" onConfirm={() => remove(item.id)}>
+                    <Button type="text" size="small" icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                )}
               </div>
             ))}
-            <Button
-              type="link"
-              size="small"
-              style={{ paddingInline: 0, marginTop: 8 }}
-              onClick={() => add({ texts: PRESET_ITEMS })}
-            >
-              补充常用物品
-            </Button>
+            {!readOnly && (
+              <Button
+                type="link"
+                size="small"
+                style={{ paddingInline: 0, marginTop: 8 }}
+                onClick={() => add({ texts: PRESET_ITEMS })}
+              >
+                补充常用物品
+              </Button>
+            )}
           </div>
         )}
       </Space>

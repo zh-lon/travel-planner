@@ -7,7 +7,32 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:../data/app.db"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  displayName  String?
+  isAdmin      Boolean  @default(false)
+  disabled     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  trips  Trip[]
+  shares TripShare[]
+}
+
+model TripShare {
+  id        String   @id @default(cuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  canEdit   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([tripId, userId])
 }
 
 model Trip {
@@ -18,12 +43,15 @@ model Trip {
   endDate     DateTime
   budgetTotal Float?
   notes       String?
+  ownerId     String? // 首次初始化管理员时认领历史数据，此后必有归属
+  owner       User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   items    ItineraryItem[]
   expenses Expense[]
   checklist ChecklistItem[]
+  shares   TripShare[]
 }
 
 model ItineraryItem {
