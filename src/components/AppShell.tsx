@@ -1,15 +1,16 @@
 "use client";
 
 import "@ant-design/v5-patch-for-react-19";
-import { useEffect, useState } from "react";
-import { App as AntApp, Button, ConfigProvider, Layout, Menu, Typography } from "antd";
-import { LogoutOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useState } from "react";
+import { App as AntApp, Button, ConfigProvider, Dropdown, Layout, Menu } from "antd";
+import { DownOutlined, LogoutOutlined, SafetyOutlined } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import SecurityModal from "@/components/SecurityModal";
 import type { UserPublic } from "@/types";
 
 dayjs.locale("zh-cn");
@@ -23,16 +24,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
       ? "/settings"
       : "/";
   const [user, setUser] = useState<UserPublic | null>(null);
+  const [securityOpen, setSecurityOpen] = useState(false);
 
-  useEffect(() => {
-    if (isLogin) return;
+  const refreshUser = useCallback(() => {
     fetch("/api/auth/status")
       .then((res) => res.json())
       .then((data: { authed?: boolean; user?: UserPublic | null }) =>
         setUser(data.authed && data.user ? data.user : null),
       )
       .catch(() => {});
-  }, [pathname, isLogin]);
+  }, []);
+
+  useEffect(() => {
+    if (!isLogin) refreshUser();
+  }, [pathname, isLogin, refreshUser]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
@@ -74,15 +79,29 @@ export default function AppShell({ children }: { children: ReactNode }) {
               />
             )}
             {!isLogin && user && (
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Typography.Text type="secondary">
+              <Dropdown
+                trigger={["click"]}
+                menu={{
+                  items: [
+                    {
+                      key: "security",
+                      icon: <SafetyOutlined />,
+                      label: `安全设置${user.totpEnabled ? "（两步验证已开启）" : ""}`,
+                    },
+                    { type: "divider" },
+                    { key: "logout", icon: <LogoutOutlined />, label: "退出登录", danger: true },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === "logout") handleLogout();
+                    else if (key === "security") setSecurityOpen(true);
+                  },
+                }}
+              >
+                <Button type="text" size="small">
                   {user.displayName || user.username}
-                  {user.isAdmin ? "（管理员）" : ""}
-                </Typography.Text>
-                <Button type="text" size="small" icon={<LogoutOutlined />} onClick={handleLogout}>
-                  退出
+                  {user.isAdmin ? "（管理员）" : ""} <DownOutlined style={{ fontSize: 10 }} />
                 </Button>
-              </span>
+              </Dropdown>
             )}
           </Layout.Header>
           <Layout.Content
@@ -91,7 +110,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
             {children}
           </Layout.Content>
         </Layout>
+        <SecurityModal
+          open={securityOpen}
+          user={user}
+          onCancel={() => setSecurityOpen(false)}
+          onChanged={refreshUser}
+        />
       </AntApp>
     </ConfigProvider>
   );
 }
+

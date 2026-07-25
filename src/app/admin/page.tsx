@@ -28,6 +28,7 @@ interface AdminUser {
   displayName: string | null;
   isAdmin: boolean;
   disabled: boolean;
+  totpEnabled: boolean;
   createdAt: string;
   _count?: { trips: number };
 }
@@ -218,6 +219,12 @@ export default function AdminPage() {
                     },
                     { title: "行程数", width: 80, render: (_: unknown, u: AdminUser) => u._count?.trips ?? 0 },
                     {
+                      title: "两步验证",
+                      width: 90,
+                      render: (_: unknown, u: AdminUser) =>
+                        u.totpEnabled ? <Tag color="success">已开启</Tag> : <Tag>未开启</Tag>,
+                    },
+                    {
                       title: "创建时间",
                       dataIndex: "createdAt",
                       width: 110,
@@ -225,10 +232,21 @@ export default function AdminPage() {
                     },
                     {
                       title: "操作",
-                      width: 150,
+                      width: 210,
                       render: (_: unknown, u: AdminUser) => (
                         <>
                           <a onClick={() => resetPassword(u)}>重置密码</a>
+                          {u.totpEnabled && (
+                            <Popconfirm
+                              title="解除该用户的两步验证？"
+                              description="用于验证器丢失时救援，解除后仅凭密码即可登录"
+                              okText="解除"
+                              cancelText="取消"
+                              onConfirm={() => updateUser(u.id, { clearTotp: true }, "已解除两步验证")}
+                            >
+                              <a style={{ marginLeft: 12 }}>解除2FA</a>
+                            </Popconfirm>
+                          )}
                           {u.id !== me.id && (
                             <Popconfirm
                               title="删除该用户？"

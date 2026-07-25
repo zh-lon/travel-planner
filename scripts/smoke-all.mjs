@@ -2,9 +2,37 @@
 // 需先启动服务（BASE_URL 可覆盖）。若系统未初始化会用 SMOKE_USER/SMOKE_PASS 创建管理员；
 // 已初始化的系统需通过 SMOKE_USER/SMOKE_PASS 提供有效管理员账号。
 // 注意：不会真实调用 AI 生成（只测参数校验路径）；会用已配置的高德 Key 做一次 POI 搜索。
+import { createHmac } from "node:crypto";
+
 const BASE = process.env.BASE_URL ?? "http://localhost:3210";
 const SMOKE_USER = process.env.SMOKE_USER ?? "smokeadmin";
 const SMOKE_PASS = process.env.SMOKE_PASS ?? "smoke123456";
+
+// 本地 TOTP 实现（与服务端一致：SHA1/6位/30秒），用于 2FA 端到端验证
+function totpCode(secretBase32, offsetSteps = 0) {
+  const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (const ch of secretBase32.toUpperCase()) {
+    const idx = ALPHABET.indexOf(ch);
+    if (idx < 0) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  const counter = Math.floor(Date.now() / 30000) + offsetSteps;
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac("sha1", Buffer.from(bytes)).update(buf).digest();
+  const off = digest[digest.length - 1] & 0xf;
+  const code =
+    (((digest[off] & 0x7f) << 24) | (digest[off + 1] << 16) | (digest[off + 2] << 8) | digest[off + 3]) % 1000000;
+  return String(code).padStart(6, "0");
+}
 
 let failed = false;
 function check(cond, msg) {
@@ -260,6 +288,32 @@ check(
   daysOf(afterDays) === 3 && afterDays.items.find((i) => i.title === "新增景点")?.dayIndex === 1,
   "删除某天：安排并入前一天且天数 -1",
 );
+// 开头插入：出发日期提前一天，原有日期不变
+const dateStr = (v) => new Date(v).toISOString().slice(0, 10);
+await admin(`/api/trips/${trip.id}/days`, {
+  method: "POST",
+  body: JSON.stringify({ action: "insert", dayIndex: 0 }),
+});
+afterDays = await admin(`/api/trips/${trip.id}`).then((r) => r.json());
+check(
+  daysOf(afterDays) === 4 &&
+    dateStr(afterDays.startDate) === "2026-08-31" &&
+    dateStr(afterDays.endDate) === "2026-09-03" &&
+    afterDays.items.find((i) => i.id === itemA.id)?.dayIndex === 1,
+  "开头插入一天：出发日期提前、结束日期与原安排日期不变",
+);
+// 删除第 1 天：出发日期推迟回去
+await admin(`/api/trips/${trip.id}/days`, {
+  method: "POST",
+  body: JSON.stringify({ action: "remove", dayIndex: 0 }),
+});
+afterDays = await admin(`/api/trips/${trip.id}`).then((r) => r.json());
+check(
+  daysOf(afterDays) === 3 &&
+    dateStr(afterDays.startDate) === "2026-09-01" &&
+    afterDays.items.find((i) => i.id === itemA.id)?.dayIndex === 0,
+  "删除第 1 天：出发日期推迟一天、其余日期不变",
+);
 await admin(`/api/trips/${trip.id}/apply-items`, {
   method: "POST",
   body: JSON.stringify({ items: afterDays.items.map((i) => ({ ...i })), days: 4 }),
@@ -328,6 +382,59 @@ await admin(`/api/trips/${trip.id}/shares`, {
 });
 const guestAfterUnshare = await guest(`/api/trips/${trip.id}`);
 check(guestAfterUnshare.status === 404, "取消共享后无法再访问");
+
+// ---------- 两步验证（2FA） ----------
+const totpSetup = await guest("/api/auth/totp/setup", { method: "POST" }).then((r) => r.json());
+check(!!totpSetup.secret && String(totpSetup.uri).startsWith("otpauth://totp/"), "生成 2FA 绑定密钥与扫码链接");
+
+const enableBad = await guest("/api/auth/totp/enable", {
+  method: "POST",
+  body: JSON.stringify({ code: String((Number(totpCode(totpSetup.secret)) + 1) % 1000000).padStart(6, "0") }),
+});
+check(enableBad.status === 400, "错误动态码无法开启 2FA");
+
+const enableOk = await guest("/api/auth/totp/enable", {
+  method: "POST",
+  body: JSON.stringify({ code: totpCode(totpSetup.secret) }),
+});
+check(enableOk.ok, "验证动态码正式开启 2FA");
+
+// 开启后重新登录需要两步
+const guest2 = makeClient();
+const step1 = await guest2("/api/auth/login", {
+  method: "POST",
+  body: JSON.stringify({ username: "smokeguest", password: "guest123456" }),
+}).then((r) => r.json());
+check(step1.need2fa === true && !!step1.preToken, "开启 2FA 后登录进入第二步（不发会话）");
+
+const bad2fa = await guest2("/api/auth/login-2fa", {
+  method: "POST",
+  body: JSON.stringify({
+    preToken: step1.preToken,
+    code: String((Number(totpCode(totpSetup.secret)) + 1) % 1000000).padStart(6, "0"),
+  }),
+});
+check(bad2fa.status === 401, "错误动态码无法完成两步登录");
+
+const ok2fa = await guest2("/api/auth/login-2fa", {
+  method: "POST",
+  body: JSON.stringify({ preToken: step1.preToken, code: totpCode(totpSetup.secret) }),
+});
+check(ok2fa.ok, "正确动态码完成两步登录");
+const st2fa = await guest2("/api/auth/status").then((r) => r.json());
+check(st2fa.authed === true && st2fa.user?.totpEnabled === true, "两步登录后会话有效且状态标记 2FA");
+
+// 管理员救援：解除用户 2FA 后可直接密码登录
+await admin(`/api/admin/users/${guestUser.id}`, {
+  method: "PUT",
+  body: JSON.stringify({ clearTotp: true }),
+});
+const guest3 = makeClient();
+const directLogin = await guest3("/api/auth/login", {
+  method: "POST",
+  body: JSON.stringify({ username: "smokeguest", password: "guest123456" }),
+}).then((r) => r.json());
+check(directLogin.ok === true && !directLogin.need2fa, "管理员解除 2FA 后可直接密码登录");
 
 // ---------- 地图搜索（真实调用一次，验证 Key 配置） ----------
 const geo = await admin(`/api/geo/search?keywords=${encodeURIComponent("天安门")}`).then((r) => r.json());

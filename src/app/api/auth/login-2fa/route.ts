@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { AUTH_COOKIE, createPreAuthToken, createToken } from "@/lib/auth";
-import { verifyPassword } from "@/lib/password";
+import { AUTH_COOKIE, createToken, parsePreAuthToken } from "@/lib/auth";
+import { verifyTotp } from "@/lib/totp";
 
 export const dynamic = "force-dynamic";
 
-// 登录失败限速：单 IP 连续失败 5 次锁定 60 秒（内存记录，重启即清）
+// 两步登录第二步：预认证令牌 + 动态码 → 发会话
+// 验证码失败限速：单 IP 连续错 5 次锁 60 秒
 const failMap = new Map<string, { fails: number; lockedUntil: number }>();
 const MAX_FAILS = 5;
 const LOCK_MS = 60000;
@@ -24,33 +25,30 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as {
-    username?: unknown;
-    password?: unknown;
+    preToken?: unknown;
+    code?: unknown;
   } | null;
-  const username = typeof body?.username === "string" ? body.username.trim() : "";
-  const password = typeof body?.password === "string" ? body.password : "";
+  const parsed = await parsePreAuthToken(
+    typeof body?.preToken === "string" ? body.preToken : undefined,
+  );
+  if (!parsed) {
+    return NextResponse.json({ error: "登录会话已过期，请重新输入密码" }, { status: 401 });
+  }
+  const user = await prisma.user.findUnique({ where: { id: parsed.userId } });
+  if (!user || user.disabled || !user.totpEnabled || !user.totpSecret) {
+    return NextResponse.json({ error: "登录状态异常，请重新登录" }, { status: 401 });
+  }
 
-  const user = username ? await prisma.user.findUnique({ where: { username } }) : null;
-  const ok = !!user && !user.disabled && !!password && verifyPassword(password, user.passwordHash);
-
-  if (!ok) {
+  const code = typeof body?.code === "string" ? body.code.trim() : "";
+  if (!verifyTotp(user.totpSecret, code)) {
     const fails = (record?.fails ?? 0) + 1;
     failMap.set(ip, { fails, lockedUntil: fails >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
-    await new Promise((r) => setTimeout(r, 600)); // 拖慢爆破
-    return NextResponse.json(
-      { error: user?.disabled ? "账号已被禁用" : "用户名或密码错误" },
-      { status: 401 },
-    );
+    await new Promise((r) => setTimeout(r, 600));
+    return NextResponse.json({ error: "验证码不正确" }, { status: 401 });
   }
 
   failMap.delete(ip);
-
-  // 开启了两步验证：不发会话，先返回 5 分钟有效的预认证令牌，等待验证码
-  if (user!.totpEnabled && user!.totpSecret) {
-    return NextResponse.json({ need2fa: true, preToken: await createPreAuthToken(user!.id) });
-  }
-
-  const token = await createToken(user!.id, 30);
+  const token = await createToken(user.id, 30);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,

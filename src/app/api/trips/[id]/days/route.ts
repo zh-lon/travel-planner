@@ -35,10 +35,15 @@ export async function POST(request: Request, { params }: Params) {
     if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > dayCount) {
       return NextResponse.json({ error: "插入位置不合法" }, { status: 400 });
     }
+    // 开头插入：出发日期提前一天，原有各天的日期保持不变；
+    // 其余位置：结束日期顺延一天，插入点之后的安排日期随之后移
     await prisma.$transaction([
       prisma.trip.update({
         where: { id },
-        data: { endDate: new Date(trip.endDate.getTime() + DAY_MS) },
+        data:
+          dayIndex === 0
+            ? { startDate: new Date(trip.startDate.getTime() - DAY_MS) }
+            : { endDate: new Date(trip.endDate.getTime() + DAY_MS) },
       }),
       prisma.itineraryItem.updateMany({
         where: { tripId: id, dayIndex: { gte: dayIndex } },
@@ -109,10 +114,14 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
+    // 删除第 1 天：出发日期推迟一天（其余日期不变）；其余：结束日期提前一天
     ops.push(
       prisma.trip.update({
         where: { id },
-        data: { endDate: new Date(trip.endDate.getTime() - DAY_MS) },
+        data:
+          dayIndex === 0
+            ? { startDate: new Date(trip.startDate.getTime() + DAY_MS) }
+            : { endDate: new Date(trip.endDate.getTime() - DAY_MS) },
       }),
     );
     await prisma.$transaction(ops);

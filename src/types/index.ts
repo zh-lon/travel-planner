@@ -5,6 +5,7 @@ export interface UserPublic {
   username: string;
   displayName: string | null;
   isAdmin?: boolean;
+  totpEnabled?: boolean;
 }
 
 export type TripRole = "owner" | "edit" | "read";

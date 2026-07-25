@@ -18,6 +18,7 @@ export async function PUT(request: Request, { params }: Params) {
     isAdmin?: unknown;
     disabled?: unknown;
     password?: unknown;
+    clearTotp?: unknown;
   } | null;
   if (!body) return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
 
@@ -31,6 +32,8 @@ export async function PUT(request: Request, { params }: Params) {
     isAdmin?: boolean;
     disabled?: boolean;
     passwordHash?: string;
+    totpSecret?: string | null;
+    totpEnabled?: boolean;
   } = {};
   if ("displayName" in body) {
     data.displayName =
@@ -45,6 +48,11 @@ export async function PUT(request: Request, { params }: Params) {
       return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
     }
     data.passwordHash = hashPassword(body.password);
+  }
+  // 管理员救援：用户验证器丢失时解除其两步验证
+  if (body.clearTotp === true) {
+    data.totpSecret = null;
+    data.totpEnabled = false;
   }
 
   const user = await prisma.user.update({ where: { id }, data }).catch(() => null);

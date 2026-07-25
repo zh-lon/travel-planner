@@ -17,6 +17,8 @@ model User {
   displayName  String?
   isAdmin      Boolean  @default(false)
   disabled     Boolean  @default(false)
+  totpSecret   String? // 两步验证密钥（base32）；绑定未验证时也暂存于此
+  totpEnabled  Boolean  @default(false)
   createdAt    DateTime @default(now())
 
   trips  Trip[]

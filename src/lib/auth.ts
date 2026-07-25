@@ -50,3 +50,22 @@ export function tokenFromCookieHeader(cookieHeader: string | null): string | und
   }
   return undefined;
 }
+
+// ---- 两步验证的预认证令牌：密码校验通过但还差验证码时签发，5 分钟有效 ----
+// 格式：2fa.userId.过期时间戳.签名
+export async function createPreAuthToken(userId: string): Promise<string> {
+  const exp = Date.now() + 5 * 60000;
+  return `2fa.${userId}.${exp}.${await sign(`2fa.${userId}.${exp}`)}`;
+}
+
+export async function parsePreAuthToken(token: string | undefined): Promise<{ userId: string } | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 4 || parts[0] !== "2fa") return null;
+  const [, userId, expStr, sig] = parts;
+  const exp = Number(expStr);
+  if (!userId || !Number.isFinite(exp) || exp < Date.now()) return null;
+  const expected = await sign(`2fa.${userId}.${expStr}`);
+  if (sig.length !== expected.length || sig !== expected) return null;
+  return { userId };
+}

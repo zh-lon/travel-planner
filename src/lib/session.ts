@@ -68,5 +68,6 @@ export function publicUser(user: User) {
     username: user.username,
     displayName: user.displayName,
     isAdmin: user.isAdmin,
+    totpEnabled: user.totpEnabled,
   };
 }

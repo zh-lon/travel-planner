@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { App, Button, Card, Form, Input, Spin, Typography } from "antd";
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
 
-type Mode = "loading" | "login" | "setup";
+type Mode = "loading" | "login" | "setup" | "totp";
 
 export default function LoginPage() {
   const { message } = App.useApp();
   const [mode, setMode] = useState<Mode>("loading");
   const [loading, setLoading] = useState(false);
+  const [preToken, setPreToken] = useState("");
+  const [otpCode, setOtpCode] = useState("");
 
   useEffect(() => {
     fetch("/api/auth/status")
@@ -37,9 +39,44 @@ export default function LoginPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ username: values.username, password: values.password }),
       });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        need2fa?: boolean;
+        preToken?: string;
+        error?: string;
+      };
+      if (data.need2fa && data.preToken) {
+        setPreToken(data.preToken);
+        setOtpCode("");
+        setMode("totp");
+        return;
+      }
       if (!res.ok || !data.ok) {
         message.error(data.error ?? "登录失败");
+        return;
+      }
+      redirectAfterAuth();
+    } catch {
+      message.error("网络错误，请重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTotp = async (code: string) => {
+    if (!/^\d{6}$/.test(code)) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/login-2fa", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ preToken, code }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        message.error(data.error ?? "验证失败");
+        setOtpCode("");
+        if (res.status === 401 && (data.error ?? "").includes("过期")) setMode("login");
         return;
       }
       redirectAfterAuth();
@@ -109,6 +146,37 @@ export default function LoginPage() {
                 登录
               </Button>
             </Form>
+          </>
+        )}
+
+        {mode === "totp" && (
+          <>
+            <Typography.Paragraph type="secondary" style={{ textAlign: "center" }}>
+              两步验证：请输入验证器 App 中的 6 位动态码
+            </Typography.Paragraph>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+              <Input.OTP
+                length={6}
+                autoFocus
+                value={otpCode}
+                onChange={(v) => {
+                  setOtpCode(v);
+                  if (v.length === 6) handleTotp(v);
+                }}
+              />
+            </div>
+            <Button
+              type="primary"
+              block
+              size="large"
+              loading={loading}
+              onClick={() => handleTotp(otpCode)}
+            >
+              验证并登录
+            </Button>
+            <Button type="link" block onClick={() => setMode("login")}>
+              返回重新输入密码
+            </Button>
           </>
         )}
 

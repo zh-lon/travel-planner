@@ -126,9 +126,13 @@ export default function TripDetailPage() {
     modal.confirm({
       title: `删除第 ${dayIndex + 1} 天？`,
       content:
-        count > 0
-          ? `该天的 ${count} 个安排将并入${dayIndex === 0 ? "下一天" : "前一天"}，后续日期整体前移一天。`
-          : "后续日期将整体前移一天。",
+        dayIndex === 0
+          ? count > 0
+            ? `该天的 ${count} 个安排将并入下一天，出发日期推迟一天（其余日期不变）。`
+            : "出发日期将推迟一天（其余日期不变）。"
+          : count > 0
+            ? `该天的 ${count} 个安排将并入前一天，后续日期整体前移一天。`
+            : "后续日期将整体前移一天。",
       okText: "删除",
       okButtonProps: { danger: true },
       cancelText: "取消",
