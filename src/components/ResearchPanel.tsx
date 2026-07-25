@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Alert, App, Button, Empty, Popconfirm, Space, Typography } from "antd";
+import { Alert, App, Button, Empty, Popconfirm, Segmented, Space, Typography } from "antd";
 import { GlobalOutlined, ReloadOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import ReactMarkdown from "react-markdown";
@@ -20,8 +20,27 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("");
   const [streamText, setStreamText] = useState("");
+  const [source, setSource] = useState<"web" | "xhs">("web");
   const abortRef = useRef<AbortController | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
+
+  const sourcePicker = (
+    <Space direction="vertical" size={2}>
+      <Segmented
+        value={source}
+        onChange={(v) => setSource(v as "web" | "xhs")}
+        options={[
+          { value: "web", label: "🌐 综合网页" },
+          { value: "xhs", label: "📕 小红书" },
+        ]}
+      />
+      {source === "xhs" && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          仅检索搜索引擎收录的小红书笔记（标题与摘要）；想深读某篇笔记请用首页「导入攻略」粘贴正文
+        </Typography.Text>
+      )}
+    </Space>
+  );
 
   useEffect(() => {
     if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
@@ -38,7 +57,7 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
     try {
       await postSse(
         `/api/trips/${trip.id}/research`,
-        {},
+        { source },
         (event) => {
           if (event.type === "status" && event.text) setStatus(event.text);
           else if (event.type === "delta" && event.text) setStreamText((prev) => prev + event.text);
@@ -123,9 +142,12 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
         style={{ padding: "40px 0" }}
       >
         {!readOnly && (
-          <Button type="primary" icon={<GlobalOutlined />} onClick={run}>
-            开始联网研究
-          </Button>
+          <Space direction="vertical" size="middle">
+            {sourcePicker}
+            <Button type="primary" icon={<GlobalOutlined />} onClick={run}>
+              开始联网研究
+            </Button>
+          </Space>
         )}
       </Empty>
     );
@@ -141,6 +163,7 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
         <span style={{ flex: 1 }} />
         {!readOnly && (
           <>
+            {sourcePicker}
             <Button size="small" icon={<ReloadOutlined />} onClick={run}>
               重新研究
             </Button>

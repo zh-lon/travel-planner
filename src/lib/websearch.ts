@@ -22,6 +22,7 @@ export async function webSearch(
   query: string,
   count = 4,
   timeoutMs = 15000,
+  domain?: string, // 限定站点（如 xiaohongshu.com）
 ): Promise<WebSearchResult[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,7 +34,11 @@ export async function webSearch(
           "content-type": "application/json",
           authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ query, count, summary: true }),
+        body: JSON.stringify({
+          query: domain ? `site:${domain} ${query}` : query,
+          count,
+          summary: true,
+        }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`博查搜索失败 HTTP ${res.status}：${truncate(await res.text(), 200)}`);
@@ -62,6 +67,7 @@ export async function webSearch(
         max_results: count,
         search_depth: "basic",
         include_answer: false,
+        ...(domain ? { include_domains: [domain] } : {}),
       }),
       signal: controller.signal,
     });
