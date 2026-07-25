@@ -10,6 +10,8 @@ export const SETTING_KEYS = [
   "amap.webKey", // 高德 Web 服务 Key（服务端 POI 搜索/地理编码）
   "qweather.host", // 和风天气专属 API Host（选填）
   "qweather.key", // 和风天气 Key（选填）
+  "search.provider", // 联网搜索服务商：tavily | bocha（选填）
+  "search.apiKey", // 联网搜索 API Key（选填）
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];

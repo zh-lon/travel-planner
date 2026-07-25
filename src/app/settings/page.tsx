@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testingAi, setTestingAi] = useState(false);
   const [testingGeo, setTestingGeo] = useState(false);
+  const [testingSearch, setTestingSearch] = useState(false);
 
   const protocol: string = Form.useWatch("ai.protocol", form) ?? "openai";
   const hints = PROTOCOL_HINTS[protocol] ?? PROTOCOL_HINTS.openai;
@@ -103,6 +104,31 @@ export default function SettingsPage() {
     }
   };
 
+  const handleTestSearch = async () => {
+    const values = form.getFieldsValue();
+    setTestingSearch(true);
+    try {
+      const res = await fetch("/api/search/test", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          provider: values["search.provider"],
+          apiKey: values["search.apiKey"],
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        message.success(`搜索可用（${data.latencyMs}ms）：${data.sample ?? ""}`);
+      } else {
+        message.error(`测试失败：${data.error}`, 6);
+      }
+    } catch {
+      message.error("测试请求失败");
+    } finally {
+      setTestingSearch(false);
+    }
+  };
+
   return (
     <Form form={form} layout="vertical" disabled={loading}>
       <Space direction="vertical" size="large" style={{ display: "flex" }}>
@@ -174,6 +200,36 @@ export default function SettingsPage() {
           <Form.Item label="API Key" name="qweather.key">
             <Input.Password placeholder="和风天气 Key" style={{ maxWidth: 420 }} />
           </Form.Item>
+        </Card>
+
+        <Card title="联网搜索（选填）">
+          <Typography.Paragraph type="secondary">
+            配置后可在行程详情的「攻略参考」页签一键联网检索目的地攻略与景点评价，由 AI
+            总结成参考报告。支持{" "}
+            <Typography.Link href="https://tavily.com" target="_blank">
+              Tavily
+            </Typography.Link>
+            （有免费额度）和{" "}
+            <Typography.Link href="https://open.bochaai.com" target="_blank">
+              博查
+            </Typography.Link>
+            。
+          </Typography.Paragraph>
+          <Form.Item label="服务商" name="search.provider" initialValue="tavily">
+            <Select
+              options={[
+                { value: "tavily", label: "Tavily（有免费额度）" },
+                { value: "bocha", label: "博查 Bocha（国内）" },
+              ]}
+              style={{ maxWidth: 420 }}
+            />
+          </Form.Item>
+          <Form.Item label="API Key" name="search.apiKey">
+            <Input.Password placeholder="搜索服务的 API Key" style={{ maxWidth: 420 }} />
+          </Form.Item>
+          <Button onClick={handleTestSearch} loading={testingSearch}>
+            测试搜索
+          </Button>
         </Card>
 
         <Button type="primary" size="large" onClick={handleSave} loading={saving}>

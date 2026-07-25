@@ -212,6 +212,25 @@ const guideLink = await admin("/api/ai/parse-guide", {
 });
 check(guideLink.status === 400, "攻略解析传纯链接返回 400（提示粘贴正文）");
 
+// ---------- 联网研究（仅在未配置搜索服务时测校验路径，避免消耗真实配额） ----------
+const settingsNow = await admin("/api/settings").then((r) => r.json());
+if (!settingsNow["search.apiKey"]) {
+  const researchNoCfg = await admin(`/api/trips/${trip.id}/research`, {
+    method: "POST",
+    body: "{}",
+  });
+  check(researchNoCfg.status === 400, "未配置搜索服务时联网研究返回 400");
+  const searchTest = await admin("/api/search/test", {
+    method: "POST",
+    body: JSON.stringify({}),
+  }).then((r) => r.json());
+  check(searchTest.ok === false, "搜索测试未配置 Key 时返回失败提示");
+} else {
+  info("已配置联网搜索服务，跳过未配置路径检查");
+}
+const researchDel = await admin(`/api/trips/${trip.id}/research`, { method: "DELETE" });
+check(researchDel.ok, "删除研究结果接口可用");
+
 // ---------- 逐项应用 ----------
 const replBad = await admin(`/api/trips/${trip.id}/apply-items`, {
   method: "POST",

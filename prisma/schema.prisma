@@ -47,6 +47,8 @@ model Trip {
   notes       String?
   ownerId     String? // 首次初始化管理员时认领历史数据，此后必有归属
   owner       User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  researchSummary String? // 联网攻略研究的总结（Markdown，含来源）
+  researchAt      DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

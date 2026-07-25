@@ -21,6 +21,8 @@ export interface TripSummary {
   ownerId?: string | null;
   owner?: UserPublic | null;
   access?: { role: TripRole };
+  researchSummary?: string | null;
+  researchAt?: string | null;
   createdAt: string;
   updatedAt: string;
   _count?: { items: number };

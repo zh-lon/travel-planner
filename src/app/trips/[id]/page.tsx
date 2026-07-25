@@ -18,6 +18,7 @@ import ExpensesPanel from "@/components/ExpensesPanel";
 import ItemFormModal from "@/components/ItemFormModal";
 import ItineraryBoard from "@/components/ItineraryBoard";
 import MapPanel from "@/components/MapPanel";
+import ResearchPanel from "@/components/ResearchPanel";
 import ShareModal from "@/components/ShareModal";
 import TripFormModal from "@/components/TripFormModal";
 import { downloadText, tripToMarkdown } from "@/lib/export";
@@ -339,6 +340,11 @@ export default function TripDetailPage() {
               key: "expenses",
               label: "开销",
               children: <ExpensesPanel trip={trip} readOnly={readOnly} />,
+            },
+            {
+              key: "research",
+              label: "攻略参考",
+              children: <ResearchPanel trip={trip} readOnly={readOnly} onChanged={load} />,
             },
             {
               key: "checklist",

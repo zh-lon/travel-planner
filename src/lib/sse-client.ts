@@ -4,6 +4,8 @@ export interface SseEventData {
   text?: string;
   message?: string;
   plan?: unknown;
+  summary?: string;
+  researchAt?: string;
 }
 
 export async function postSse(
