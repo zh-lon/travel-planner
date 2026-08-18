@@ -10,7 +10,7 @@ import ExpenseFormModal from "@/components/ExpenseFormModal";
 import { expenseCategoryMeta, EXPENSE_CATEGORIES } from "@/types/constants";
 import type { ExpenseT, TripDetail } from "@/types";
 
-const CHART_PRIMARY = "#1677ff"; // 已通过配色校验（light surface）
+const CHART_PRIMARY = "#0d9488"; // 青绿主色
 
 function fmtMoney(n: number): string {
   return `¥${n.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;

@@ -12,6 +12,7 @@ export const SETTING_KEYS = [
   "qweather.key", // 和风天气 Key（选填）
   "search.provider", // 联网搜索服务商：tavily | bocha（选填）
   "search.apiKey", // 联网搜索 API Key（选填）
+  "ai.maxTokens", // AI 生成回复的 token 上限（选填，默认 8000）
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];

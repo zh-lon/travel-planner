@@ -21,6 +21,7 @@ interface IncomingItem {
   lat: number | null;
   address: string | null;
   estimatedCost: number | null;
+  needBooking: boolean;
   notes: string | null;
   aiGenerated: boolean;
 }
@@ -76,6 +77,7 @@ export async function POST(request: Request, { params }: Params) {
       address: strOrNull(raw.address),
       estimatedCost:
         typeof raw.estimatedCost === "number" && raw.estimatedCost >= 0 ? raw.estimatedCost : null,
+      needBooking: raw.needBooking === true,
       notes: strOrNull(raw.notes),
       aiGenerated: raw.aiGenerated === true,
     });
@@ -112,6 +114,7 @@ export async function POST(request: Request, { params }: Params) {
           lat: item.lat,
           address: item.address,
           estimatedCost: item.estimatedCost,
+          needBooking: item.needBooking,
           notes: item.notes,
           aiGenerated: item.aiGenerated,
         },

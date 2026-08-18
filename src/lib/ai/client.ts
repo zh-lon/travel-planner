@@ -9,6 +9,7 @@ export interface AiConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  maxTokens?: number; // 生成回复的 token 上限（选填，默认 8000）
 }
 
 export interface ChatMessage {
@@ -108,6 +109,20 @@ export async function chat(
       choices?: Array<{ message?: { content?: string } }>;
     };
     return data.choices?.[0]?.message?.content ?? "";
+  } catch (err) {
+    const isAbort = err instanceof Error && err.name === "AbortError";
+    console.error("[ai/chat] 调用失败", {
+      isTimeout: isAbort,
+      timeoutMs,
+      protocol: config.protocol,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      requestUrl: config.protocol === "anthropic" ? anthropicMessagesUrl(config.baseUrl) : openAiChatUrl(config.baseUrl),
+      errorName: err instanceof Error ? err.name : typeof err,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      errorStack: err instanceof Error ? err.stack : undefined,
+    });
+    throw err;
   } finally {
     clearTimeout(timer);
   }

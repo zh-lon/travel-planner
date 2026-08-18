@@ -49,6 +49,7 @@ export async function PUT(request: Request, { params }: Params) {
     lat?: number | null;
     address?: string | null;
     estimatedCost?: number | null;
+    needBooking?: boolean;
     notes?: string | null;
     transportMode?: string | null;
   } = {};
@@ -78,6 +79,7 @@ export async function PUT(request: Request, { params }: Params) {
         ? body.estimatedCost
         : null;
   }
+  if ("needBooking" in body) data.needBooking = body.needBooking === true;
 
   try {
     const item = await prisma.itineraryItem.update({ where: { id }, data });

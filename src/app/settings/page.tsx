@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { App, Button, Card, Form, Input, Select, Space, Typography } from "antd";
+import { App, Button, Card, Form, Input, InputNumber, Select, Space, Typography } from "antd";
 
 type SettingsValues = Record<string, string | undefined>;
 
@@ -154,6 +154,13 @@ export default function SettingsPage() {
           </Form.Item>
           <Form.Item label="模型名" name="ai.model">
             <Input placeholder={hints.model} style={{ maxWidth: 420 }} />
+          </Form.Item>
+          <Form.Item
+            label="Token 上限"
+            name="ai.maxTokens"
+            extra="AI 生成回复的最大 token 数，默认 8000。值越大单次生成内容越长，但耗时和费用也越高"
+          >
+            <InputNumber min={256} max={65536} step={256} placeholder="8000" style={{ width: 220 }} />
           </Form.Item>
           <Button onClick={handleTestAi} loading={testingAi}>
             测试连通性

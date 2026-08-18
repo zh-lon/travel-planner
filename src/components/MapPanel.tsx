@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, App, Button, Empty, Segmented, Select, Spin, Tag, Tooltip, Typography } from "antd";
-import { AimOutlined, EditOutlined, PushpinOutlined } from "@ant-design/icons";
+import { AimOutlined, DownOutlined, EditOutlined, PlusOutlined, PushpinOutlined, UpOutlined } from "@ant-design/icons";
 import type { Dayjs } from "dayjs";
 import { loadAMap } from "@/lib/map/amap";
 import { dayColor, itemTypeMeta } from "@/types/constants";
@@ -47,8 +47,11 @@ interface Props {
   startDate: Dayjs;
   dayCount: number;
   readOnly?: boolean; // 只读共享：隐藏定位编辑入口、禁用交通方式修改
+  onAddItem?: (dayIndex: number) => void; // 在地图侧栏添加行程项
   onEditItem: (item: ItineraryItemT) => void;
+  onReorder?: (items: ItineraryItemT[]) => void; // 在地图侧栏排序行程项
   onItemsChanged?: () => void;
+  onShowDetail?: (item: ItineraryItemT) => void; // 在地图列表中点击已定位项 → 打开地点详情
 }
 
 function escapeHtml(text: string): string {
@@ -119,7 +122,7 @@ function searchRoute(AMap: any, mode: SegMode, from: [number, number], to: [numb
   });
 }
 
-export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItemsChanged }: Props) {
+export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditItem, onReorder, onItemsChanged, onShowDetail }: Props) {
   const { message } = App.useApp();
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -142,7 +145,14 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
   const [segStats, setSegStats] = useState<Record<string, SegStat>>({});
   const [routing, setRouting] = useState(false);
   const [picking, setPicking] = useState<{ itemId: string; title: string } | null>(null);
+  const [positioning, setPositioning] = useState(false); // 定位保存中
+  const pickingRef = useRef<{ itemId: string; title: string } | null>(null);
   const pickHandlerRef = useRef<((lng: number, lat: number) => void) | null>(null);
+
+  // 同步 picking 到 ref，确保 pickHandler 始终拿到最新值
+  useEffect(() => {
+    pickingRef.current = picking;
+  }, [picking]);
 
   // 行程项数据更新后（含保存交通方式成功回读），清空本地乐观覆盖
   useEffect(() => {
@@ -214,6 +224,7 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
       <b>${escapeHtml(item.title)}</b><br/>
       <span style="color:#888;font-size:12px">第 ${item.dayIndex + 1} 天 · ${meta.label}${time ? ` · ${escapeHtml(time)}` : ""}</span>
       ${item.address ? `<br/><span style="color:#888;font-size:12px">${escapeHtml(item.address)}</span>` : ""}
+      ${item.notes ? `<br/><span style="display:inline-block;margin-top:4px;padding:4px 6px;background:#fafafa;border-radius:4px;font-size:12px;color:#666">📝 ${escapeHtml(item.notes)}</span>` : ""}
     </div>`;
     infoWindowRef.current?.setContent(html);
     infoWindowRef.current?.open(map, [item.lng, item.lat]);
@@ -406,9 +417,10 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
   };
   // 每次渲染刷新处理器，保证拿到最新的 picking 状态
   pickHandlerRef.current = async (lng: number, lat: number) => {
-    const target = picking;
+    const target = pickingRef.current;
     if (!target) return;
     cancelPick();
+    setPositioning(true);
     let address = "";
     try {
       const regeoRes = await fetch(`/api/geo/regeo?lng=${lng}&lat=${lat}`);
@@ -428,6 +440,7 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
     } else {
       message.error("保存位置失败");
     }
+    setPositioning(false);
   };
 
   // 保存某段的交通方式（存在段终点行程项上）
@@ -490,6 +503,27 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
     return text;
   };
 
+  const handleMoveItem = useCallback(
+    (item: ItineraryItemT, direction: -1 | 1) => {
+      const dayItems = items
+        .filter((i) => i.dayIndex === item.dayIndex)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      const idx = dayItems.findIndex((i) => i.id === item.id);
+      if (idx < 0) return;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= dayItems.length) return;
+
+      const next = items.map((i) => ({ ...i }));
+      const a = next.find((i) => i.id === item.id)!;
+      const b = next.find((i) => i.id === dayItems[targetIdx].id)!;
+      const tmp = a.sortOrder;
+      a.sortOrder = b.sortOrder;
+      b.sortOrder = tmp;
+      onReorder?.(next);
+    },
+    [items, onReorder],
+  );
+
   if (status === "nokey") {
     return (
       <Alert
@@ -509,7 +543,7 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%", overflow: "hidden" }}>
       {picking && (
         <Alert
           type="info"
@@ -520,6 +554,14 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
               取消选点
             </Button>
           }
+        />
+      )}
+      {positioning && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<Spin size="small" />}
+          message="正在保存定位…"
         />
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -563,9 +605,9 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
           </Typography.Text>
         )}
       </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 12, flex: 1, minHeight: 0 }}>
         <div style={{ flex: 1, minWidth: 320, position: "relative" }}>
-          <div ref={containerRef} style={{ height: 520, borderRadius: 8, overflow: "hidden" }} />
+          <div ref={containerRef} style={{ height: "100%", borderRadius: 8, overflow: "hidden" }} />
           {status === "loading" && (
             <div
               style={{
@@ -582,7 +624,7 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
             </div>
           )}
         </div>
-        <div style={{ width: 320, maxHeight: 520, overflowY: "auto" }}>
+        <div style={{ width: 320, height: "100%", overflowY: "auto" }}>
           {allVisibleItems.length === 0 ? (
             <Empty description="暂无行程项" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (
@@ -608,6 +650,16 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
                     <Typography.Text strong style={{ fontSize: 13 }}>
                       第 {d + 1} 天
                     </Typography.Text>
+                    {!readOnly && onAddItem && (
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<PlusOutlined />}
+                        onClick={() => onAddItem(d)}
+                        style={{ color: "#999", padding: "0 4px", height: 22, fontSize: 12 }}
+                        title="添加行程项"
+                      />
+                    )}
                   </div>
                   {summary && (
                     <Typography.Text
@@ -665,8 +717,7 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
                         <div
                           onClick={() => {
                             if (located) {
-                              mapRef.current?.setZoomAndCenter(15, [item.lng, item.lat]);
-                              openInfo(item);
+                              onShowDetail?.(item);
                             } else {
                               onEditItem(item);
                             }
@@ -698,21 +749,49 @@ export default function MapPanel({ items, dayCount, readOnly, onEditItem, onItem
                           >
                             {seq + 1}
                           </span>
-                          <span
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {item.title}
-                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {item.title}
+                            </div>
+                            {item.startTime && (
+                              <div style={{ fontSize: 12, color: "#0d9488", fontWeight: 500, marginTop: 2 }}>
+                                {item.startTime}
+                                {item.endTime ? ` - ${item.endTime}` : ""}
+                              </div>
+                            )}
+                          </div>
                           <span
                             style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0 }}
                             onClick={(e) => e.stopPropagation()}
                           >
+                            {!readOnly && onReorder && (
+                              <span style={{ display: "flex", flexDirection: "column", marginRight: 2 }}>
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<UpOutlined style={{ fontSize: 10 }} />}
+                                  disabled={seq === 0}
+                                  onClick={() => handleMoveItem(item, -1)}
+                                  style={{ padding: "0 2px", height: 16, lineHeight: "16px", color: "#bbb" }}
+                                  title="上移"
+                                />
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<DownOutlined style={{ fontSize: 10 }} />}
+                                  disabled={seq === dayItems.length - 1}
+                                  onClick={() => handleMoveItem(item, 1)}
+                                  style={{ padding: "0 2px", height: 16, lineHeight: "16px", color: "#bbb" }}
+                                  title="下移"
+                                />
+                              </span>
+                            )}
                             {!readOnly && (
                               <>
                                 <Tooltip title="在地图上点选新位置">

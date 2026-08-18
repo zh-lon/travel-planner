@@ -40,6 +40,7 @@ export async function POST(request: Request) {
       lat: item.lat,
       address: item.address,
       estimatedCost: item.estimatedCost,
+      needBooking: item.needBooking === true,
       notes: item.notes,
       aiGenerated: true,
     })),

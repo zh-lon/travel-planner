@@ -37,16 +37,31 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "标题不能为空" }, { status: 400 });
   }
 
+  const reqSortOrder =
+    typeof body.sortOrder === "number" && Number.isInteger(body.sortOrder) && body.sortOrder >= 0
+      ? body.sortOrder
+      : null;
+
   const max = await prisma.itineraryItem.aggregate({
     where: { tripId: id, dayIndex },
     _max: { sortOrder: true },
   });
 
+  const finalSortOrder = reqSortOrder ?? (max._max.sortOrder ?? -1) + 1;
+
+  // 指定插入位置时，将后续项 sortOrder 后移
+  if (reqSortOrder != null) {
+    await prisma.itineraryItem.updateMany({
+      where: { tripId: id, dayIndex, sortOrder: { gte: finalSortOrder } },
+      data: { sortOrder: { increment: 1 } },
+    });
+  }
+
   const item = await prisma.itineraryItem.create({
     data: {
       tripId: id,
       dayIndex,
-      sortOrder: (max._max.sortOrder ?? -1) + 1,
+      sortOrder: finalSortOrder,
       type,
       title: body.title.trim(),
       startTime: strOrNull(body.startTime),
@@ -59,6 +74,7 @@ export async function POST(request: Request, { params }: Params) {
         typeof body.estimatedCost === "number" && body.estimatedCost >= 0
           ? body.estimatedCost
           : null,
+      needBooking: body.needBooking === true,
       notes: strOrNull(body.notes),
     },
   });

@@ -61,6 +61,7 @@ export async function POST(request: Request) {
         lat: num(raw.lat),
         address: str(raw.address),
         estimatedCost: num(raw.estimatedCost),
+        needBooking: raw.needBooking === true,
         notes: str(raw.notes),
         transportMode:
           typeof raw.transportMode === "string" &&

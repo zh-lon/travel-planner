@@ -86,6 +86,7 @@ export default function TripPrintPage() {
                   <span style={{ flex: 1 }}>
                     <b>{item.title}</b>
                     {item.placeName && <span style={{ color: "#666" }}>（{item.placeName}）</span>}
+                    {item.needBooking && <span style={{ color: "#d46b08" }}>【需预约】</span>}
                     {item.notes && <div style={{ fontSize: 12, color: "#888" }}>{item.notes}</div>}
                   </span>
                   <span style={{ width: 80, textAlign: "right", color: "#555" }}>

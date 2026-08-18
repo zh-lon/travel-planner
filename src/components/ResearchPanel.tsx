@@ -20,23 +20,39 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("");
   const [streamText, setStreamText] = useState("");
-  const [source, setSource] = useState<"web" | "xhs">("web");
+  const [source, setSource] = useState<"web" | "xhs" | "ai">("web");
+  const sourceRef = useRef(source);
   const abortRef = useRef<AbortController | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
+
+  // 保持 sourceRef 与 state 同步，供 run() 读取最新值
+  useEffect(() => {
+    sourceRef.current = source;
+  }, [source]);
+
+  // 根据当前标签获取对应的研究结果
+  const researchSummary = source === "xhs" ? trip.researchXhs : source === "ai" ? trip.researchAi : trip.researchWeb;
+  const researchAt = source === "xhs" ? trip.researchXhsAt : source === "ai" ? trip.researchAiAt : trip.researchWebAt;
 
   const sourcePicker = (
     <Space direction="vertical" size={2}>
       <Segmented
         value={source}
-        onChange={(v) => setSource(v as "web" | "xhs")}
+        onChange={(v) => setSource(v as "web" | "xhs" | "ai")}
         options={[
           { value: "web", label: "🌐 综合网页" },
           { value: "xhs", label: "📕 小红书" },
+          { value: "ai", label: "🤖 AI 直搜" },
         ]}
       />
       {source === "xhs" && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           仅检索搜索引擎收录的小红书笔记（标题与摘要）；想深读某篇笔记请用首页「导入攻略」粘贴正文
+        </Typography.Text>
+      )}
+      {source === "ai" && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          由 AI 自行联网搜索攻略，无需配置搜索 API Key，适合快速获取信息
         </Typography.Text>
       )}
     </Space>
@@ -57,7 +73,7 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
     try {
       await postSse(
         `/api/trips/${trip.id}/research`,
-        { source },
+        { source: sourceRef.current },
         (event) => {
           if (event.type === "status" && event.text) setStatus(event.text);
           else if (event.type === "delta" && event.text) setStreamText((prev) => prev + event.text);
@@ -124,7 +140,7 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
     );
   }
 
-  if (!trip.researchSummary) {
+  if (!researchSummary) {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -157,7 +173,7 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
     <Space direction="vertical" size="middle" style={{ display: "flex" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          研究于 {trip.researchAt ? dayjs(trip.researchAt).format("YYYY年M月D日 HH:mm") : "—"} ·
+          研究于 {researchAt ? dayjs(researchAt).format("YYYY年M月D日 HH:mm") : "—"} ·
           内容由网络搜索与 AI 总结生成，仅供参考
         </Typography.Text>
         <span style={{ flex: 1 }} />
@@ -181,7 +197,7 @@ export default function ResearchPanel({ trip, readOnly, onChanged }: Props) {
             a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
           }}
         >
-          {trip.researchSummary}
+          {researchSummary}
         </ReactMarkdown>
       </Typography>
     </Space>

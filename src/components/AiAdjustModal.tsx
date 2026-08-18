@@ -5,7 +5,7 @@ import { Alert, App, Button, Input, Modal, Space } from "antd";
 import { RobotOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import AiDiffPreview from "@/components/AiDiffPreview";
-import { composeApplyItems, diffPlan } from "@/lib/ai/diff";
+import { composeApplyItems, diffPlan, revertNonIntentFields } from "@/lib/ai/diff";
 import { postSse } from "@/lib/sse-client";
 import type { AiPlan, TripDetail } from "@/types";
 
@@ -16,7 +16,7 @@ interface Props {
   onApplied: () => void;
 }
 
-type Phase = "form" | "generating" | "preview";
+type Phase = "form" | "generating" | "preview" | "confirm";
 
 export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props) {
   const { message } = App.useApp();
@@ -27,13 +27,19 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
   const [plan, setPlan] = useState<AiPlan | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
+  const [confirmData, setConfirmData] = useState<{
+    questions: Array<{ question: string; options: Array<{ label: string; desc: string }> }>;
+    currentIdx: number;
+    answers: string[];
+  } | null>(null);
+  const [customAnswer, setCustomAnswer] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
   // 对比：AI 方案 vs 现有行程
   const entries = useMemo(
-    () => (plan ? diffPlan(trip.items, plan) : []),
-    [plan, trip.items],
+    () => (plan ? revertNonIntentFields(diffPlan(trip.items, plan), instruction) : []),
+    [plan, trip.items, instruction],
   );
 
   // 方案到达时默认全选所有变更
@@ -48,6 +54,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
       setPlan(null);
       setStreamText("");
       setStatus("");
+      setConfirmData(null);
+      setCustomAnswer("");
     }
   }, [open]);
 
@@ -55,7 +63,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
   }, [streamText, status]);
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (confirmAnswer?: string) => {
     if (!instruction.trim()) {
       message.warning("请先填写调整要求");
       return;
@@ -68,13 +76,20 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     try {
       await postSse(
         "/api/ai/adjust",
-        { tripId: trip.id, instruction },
+        { tripId: trip.id, instruction, ...(confirmAnswer ? { confirmAnswer } : {}) },
         (event) => {
           if (event.type === "delta" && event.text) setStreamText((prev) => prev + event.text);
           else if (event.type === "status" && event.text) setStatus(event.text);
           else if (event.type === "result" && event.plan) {
             setPlan(event.plan as AiPlan);
             setPhase("preview");
+          } else if (event.type === "confirm") {
+            setConfirmData({
+              questions: event.questions ?? [],
+              currentIdx: 0,
+              answers: [],
+            });
+            setPhase("confirm");
           } else if (event.type === "error") {
             message.error(event.message ?? "生成失败", 6);
             setPhase("form");
@@ -89,6 +104,23 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
       }
       setPhase("form");
     }
+  };
+
+  const handleConfirmSelect = (label: string) => {
+    const data = confirmData;
+    if (!data) return;
+    const newAnswers = [...data.answers, label];
+    const nextIdx = data.currentIdx + 1;
+    setCustomAnswer("");
+    if (nextIdx >= data.questions.length) {
+      const answersStr = data.questions
+        .map((q, i) => `${q.question}：${newAnswers[i]}`)
+        .join("；");
+      setConfirmData(null);
+      handleGenerate(answersStr);
+      return;
+    }
+    setConfirmData({ ...data, currentIdx: nextIdx, answers: newAnswers });
   };
 
   const selectedCount = entries.filter(
@@ -121,7 +153,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     <Modal
       title={
         <span>
-          <RobotOutlined style={{ color: "#1677ff", marginRight: 8 }} />
+          <RobotOutlined style={{ color: "#0d9488", marginRight: 8 }} />
           AI 调整行程
         </span>
       }
@@ -149,7 +181,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
             placeholder={`告诉 AI 你想怎么调整，例如：\n· 第 2 天太赶了，减少一个景点，节奏放慢\n· 把美食安排换成本地老字号\n· 行程加一天，加的这天去周边古镇\n· 压缩成两天的精华版`}
             maxLength={500}
           />
-          <Button type="primary" block icon={<RobotOutlined />} onClick={handleGenerate}>
+          <Button type="primary" block icon={<RobotOutlined />} onClick={() => handleGenerate()}>
             生成调整方案
           </Button>
         </Space>
@@ -186,6 +218,58 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
           </Button>
         </Space>
       )}
+
+      {phase === "confirm" && confirmData && (() => {
+        const q = confirmData.questions[confirmData.currentIdx];
+        if (!q) return null;
+        const total = confirmData.questions.length;
+        return (
+        <Space direction="vertical" size="middle" style={{ display: "flex" }}>
+          {total > 1 && (
+            <div style={{ fontSize: 12, color: "#999", textAlign: "center" }}>
+              问题 {confirmData.currentIdx + 1}/{total}
+            </div>
+          )}
+          <Alert type="info" showIcon message={q.question} />
+          <Space direction="vertical" style={{ display: "flex", width: "100%" }}>
+            {q.options.map((opt) => (
+              <Button
+                key={opt.label}
+                block
+                style={{ textAlign: "left", height: "auto", padding: "8px 12px", whiteSpace: "normal" }}
+                onClick={() => handleConfirmSelect(opt.label)}
+              >
+                <div style={{ fontWeight: 500, wordBreak: "break-word" }}>{opt.label}</div>
+                {opt.desc && <div style={{ fontSize: 11, color: "#999", wordBreak: "break-word", marginTop: 2 }}>{opt.desc}</div>}
+              </Button>
+            ))}
+          </Space>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Input
+              placeholder="或输入你的回答…"
+              value={customAnswer}
+              onChange={(e) => setCustomAnswer(e.target.value)}
+              onPressEnter={() => {
+                if (customAnswer.trim()) {
+                  handleConfirmSelect(customAnswer.trim());
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button type="primary" onClick={() => {
+              if (customAnswer.trim()) {
+                handleConfirmSelect(customAnswer.trim());
+              }
+            }}>
+              发送
+            </Button>
+          </div>
+          <Button block onClick={() => { setConfirmData(null); setPhase("form"); }}>
+            返回修改要求
+          </Button>
+        </Space>
+        );
+      })()}
 
       {phase === "preview" && plan && (
         <Space direction="vertical" size="middle" style={{ display: "flex" }}>

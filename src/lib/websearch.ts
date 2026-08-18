@@ -12,7 +12,7 @@ export const SEARCH_PROVIDERS: { value: SearchProvider; label: string }[] = [
   { value: "bocha", label: "博查 Bocha（国内）" },
 ];
 
-function truncate(text: string, max = 500): string {
+function truncate(text: string, max = 800): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
@@ -22,23 +22,22 @@ export async function webSearch(
   query: string,
   count = 4,
   timeoutMs = 15000,
-  domain?: string, // 限定站点（如 xiaohongshu.com）
+  domains?: string[], // 限定站点域名列表
 ): Promise<WebSearchResult[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     if (provider === "bocha") {
+      const body: Record<string, unknown> = { query, count, summary: true };
+      // 博查使用 include 参数限定站点，多个用逗号分隔
+      if (domains && domains.length > 0) body.include = domains.join(",");
       const res = await fetch("https://api.bochaai.com/v1/web-search", {
         method: "POST",
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          query: domain ? `site:${domain} ${query}` : query,
-          count,
-          summary: true,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`博查搜索失败 HTTP ${res.status}：${truncate(await res.text(), 200)}`);
@@ -67,7 +66,7 @@ export async function webSearch(
         max_results: count,
         search_depth: "basic",
         include_answer: false,
-        ...(domain ? { include_domains: [domain] } : {}),
+        ...(domains && domains.length > 0 ? { include_domains: domains } : {}),
       }),
       signal: controller.signal,
     });

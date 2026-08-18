@@ -45,10 +45,17 @@ model Trip {
   endDate     DateTime
   budgetTotal Float?
   notes       String?
+  planParams  String? // AI 规划时的参数 JSON（出发地/人数/预算/节奏/偏好/必去地点等），供 AI 助手对话与调整时参考
   ownerId     String? // 首次初始化管理员时认领历史数据，此后必有归属
   owner       User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  researchSummary String? // 联网攻略研究的总结（Markdown，含来源）
-  researchAt      DateTime?
+  researchWeb   String?   // 综合网页研究结果（Markdown）
+  researchWebAt DateTime?
+  researchXhs   String?   // 小红书研究结果（Markdown）
+  researchXhsAt DateTime?
+  researchAi    String?   // AI 直搜研究结果（Markdown）
+  researchAiAt  DateTime?
+  shareToken    String?   @unique // 随身行程手册在线分享码（为空 = 未开启）
+  shareTokenAt  DateTime? // 分享码生成时间
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -73,9 +80,12 @@ model ItineraryItem {
   lat           Float?
   address       String?
   estimatedCost Float?
+  needBooking   Boolean @default(false) // 是否需要提前预约
   notes         String?
   transportMode String? // 从上一个点到本点的交通方式：line | driving | walking | riding，空 = 跟随全局默认
   aiGenerated   Boolean @default(false)
+  guideInfo     String? // AI 生成的地点攻略 JSON（预约/开放时间/门票/贴士等）
+  guideAt       DateTime? // 攻略生成时间
   createdAt     DateTime @default(now())
 
   expenses Expense[]
@@ -110,4 +120,14 @@ model ChecklistItem {
 model Setting {
   key   String @id
   value String
+}
+
+model PoiExplorerCache {
+  id        String   @id @default(cuid())
+  tripId    String
+  userId    String
+  data      String   // CachePayload JSON
+  updatedAt DateTime @updatedAt
+
+  @@unique([tripId, userId])
 }

@@ -35,6 +35,21 @@ export function expenseCategoryMeta(value: string) {
   );
 }
 
+// 旅行偏好选项（AI 规划、行程编辑、AI 解析提示词共用）
+export const PREFERENCE_VALUES = [
+  "亲子",
+  "美食",
+  "暴走打卡",
+  "休闲慢节奏",
+  "历史文化",
+  "自然风光",
+  "购物",
+  "摄影",
+  "夜生活",
+  "小众路线",
+  "自驾游",
+];
+
 // 地图/看板按天配色
 export const DAY_COLORS = [
   "#1677ff",

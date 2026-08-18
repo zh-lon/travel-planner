@@ -1,9 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { App, DatePicker, Form, Input, InputNumber, Modal } from "antd";
+import { App, DatePicker, Form, Input, InputNumber, Modal, Select } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
+import { PREFERENCE_VALUES } from "@/types/constants";
 import type { TripSummary } from "@/types";
+
+const PREFERENCE_OPTIONS = PREFERENCE_VALUES.map((x) => ({ value: x, label: x }));
+
+// 从行程的 planParams JSON 中安全读取已有规划参数
+function readPlanParams(trip: TripSummary): Record<string, unknown> {
+  if (!trip.planParams) return {};
+  try {
+    const p = JSON.parse(trip.planParams) as Record<string, unknown>;
+    return p && typeof p === "object" ? p : {};
+  } catch {
+    return {};
+  }
+}
 
 interface Props {
   open: boolean;
@@ -20,12 +34,16 @@ export default function TripFormModal({ open, trip, onCancel, onSaved }: Props) 
   useEffect(() => {
     if (!open) return;
     if (trip) {
+      const params = readPlanParams(trip);
       form.setFieldsValue({
         title: trip.title,
         destination: trip.destination,
         dates: [dayjs(trip.startDate), dayjs(trip.endDate)],
         budgetTotal: trip.budgetTotal ?? undefined,
         notes: trip.notes ?? "",
+        preferences: Array.isArray(params.preferences)
+          ? (params.preferences as unknown[]).map((x) => String(x))
+          : [],
       });
     } else {
       form.resetFields();
@@ -36,6 +54,13 @@ export default function TripFormModal({ open, trip, onCancel, onSaved }: Props) 
     const values = await form.validateFields().catch(() => null);
     if (!values) return;
     const [start, end] = values.dates as [Dayjs, Dayjs];
+    const preferences = (values.preferences as string[]) ?? [];
+    // 编辑时保留原 planParams 其他字段，仅同步偏好；新建且无偏好则不传
+    const planParams = trip
+      ? { ...readPlanParams(trip), preferences }
+      : preferences.length > 0
+        ? { preferences }
+        : undefined;
     setSaving(true);
     try {
       const res = await fetch(trip ? `/api/trips/${trip.id}` : "/api/trips", {
@@ -48,6 +73,7 @@ export default function TripFormModal({ open, trip, onCancel, onSaved }: Props) 
           endDate: end.format("YYYY-MM-DD"),
           budgetTotal: typeof values.budgetTotal === "number" ? values.budgetTotal : null,
           notes: values.notes ?? "",
+          ...(planParams ? { planParams } : {}),
         }),
       });
       if (!res.ok) {
@@ -86,6 +112,9 @@ export default function TripFormModal({ open, trip, onCancel, onSaved }: Props) 
         </Form.Item>
         <Form.Item label="总预算" name="budgetTotal">
           <InputNumber min={0} prefix="¥" style={{ width: 200 }} placeholder="选填" />
+        </Form.Item>
+        <Form.Item label="旅行偏好" name="preferences" extra="供 AI 助手对话与调整行程时参考（如选了「自驾游」，AI 会按自驾出行给建议）">
+          <Select mode="multiple" options={PREFERENCE_OPTIONS} placeholder="可多选" allowClear />
         </Form.Item>
         <Form.Item label="备注" name="notes" style={{ marginBottom: 0 }}>
           <Input.TextArea rows={2} placeholder="选填" maxLength={500} />

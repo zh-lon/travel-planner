@@ -43,8 +43,24 @@ export async function PUT(request: Request, { params }: Params) {
   if ("error" in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  // planParams 与库中原值合并，避免部分更新时把已有规划参数冲掉
+  const updateData = { ...parsed.data };
+  if (updateData.planParams) {
+    const old = await prisma.trip.findUnique({ where: { id }, select: { planParams: true } });
+    if (old?.planParams) {
+      try {
+        const merged = {
+          ...(JSON.parse(old.planParams) as Record<string, unknown>),
+          ...(JSON.parse(updateData.planParams) as Record<string, unknown>),
+        };
+        updateData.planParams = JSON.stringify(merged);
+      } catch {
+        // JSON 解析失败时保留新传入的值
+      }
+    }
+  }
   const trip = await prisma.trip
-    .update({ where: { id }, data: parsed.data })
+    .update({ where: { id }, data: updateData })
     .catch(() => null);
   if (!trip) return NextResponse.json({ error: "行程不存在" }, { status: 404 });
 

@@ -17,12 +17,17 @@ export async function GET(request: Request) {
       _count: { select: { items: true } },
       owner: { select: { id: true, username: true, displayName: true } },
       shares: { where: { userId: user.id }, select: { canEdit: true } },
+      items: {
+        where: { placeName: { not: null } },
+        select: { placeName: true },
+      },
     },
   });
 
   return NextResponse.json(
-    trips.map(({ shares, ...trip }) => ({
+    trips.map(({ shares, items, ...trip }) => ({
       ...trip,
+      places: [...new Set(items.map((i) => i.placeName).filter(Boolean))].slice(0, 8),
       access:
         trip.ownerId === user.id || trip.ownerId === null
           ? { role: "owner" }

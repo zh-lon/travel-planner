@@ -5,7 +5,11 @@ import { AUTH_COOKIE, parseToken } from "@/lib/auth";
 // 仅校验令牌签名与有效期（edge 环境无法查库），用户有效性由各接口的 requireUser 再核验。
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname === "/login" || pathname.startsWith("/api/auth/")) {
+  if (
+    pathname === "/login" ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/public/")
+  ) {
     return NextResponse.next();
   }
 

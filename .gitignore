@@ -20,3 +20,12 @@ npm-debug.log*
 
 # Claude Code 本机配置
 .claude/settings.local.json
+
+# Playwright 测试临时文件
+.playwright-mcp/
+
+# Qoder IDE 内部缓存
+.qoder/
+
+# 开发截图
+*.png

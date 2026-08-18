@@ -1,11 +1,27 @@
 // 客户端 SSE 读取工具：POST 请求 + 逐事件回调
 export interface SseEventData {
-  type: "status" | "delta" | "result" | "error";
+  type: "status" | "delta" | "result" | "error" | "findings" | "reply" | "step" | "workflow" | "confirm";
   text?: string;
   message?: string;
   plan?: unknown;
   summary?: string;
   researchAt?: string;
+  findings?: unknown;
+  notes?: string[];
+  reply?: string;
+  proposal?: unknown;
+  overview?: unknown;
+  items?: unknown;
+  parsed?: unknown;
+  guide?: unknown;
+  guideAt?: string;
+  // 工作流步骤事件字段
+  id?: string;
+  label?: string;
+  status?: "start" | "done" | "error";
+  detail?: string;
+  // 确认事件字段（AI 要求用户逐个回答问题）
+  questions?: Array<{ question: string; options: Array<{ label: string; desc: string }> }>;
 }
 
 export async function postSse(

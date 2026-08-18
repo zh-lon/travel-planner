@@ -14,10 +14,11 @@ export function parseTripBody(body: Record<string, unknown> | null):
         endDate: Date;
         budgetTotal: number | null;
         notes: string | null;
+        planParams?: string | null; // 未传时为 undefined，更新时保留原值
       };
     } {
   if (!body) return { error: "请求体格式错误" };
-  const { title, destination, startDate, endDate, budgetTotal, notes } = body;
+  const { title, destination, startDate, endDate, budgetTotal, notes, planParams } = body;
   if (typeof title !== "string" || !title.trim()) return { error: "行程标题不能为空" };
   if (typeof destination !== "string" || !destination.trim()) return { error: "目的地不能为空" };
   const start = new Date(String(startDate));
@@ -34,6 +35,17 @@ export function parseTripBody(body: Record<string, unknown> | null):
       endDate: end,
       budgetTotal: typeof budgetTotal === "number" && budgetTotal >= 0 ? budgetTotal : null,
       notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
+      // 未传 planParams 时返回 undefined（更新保留原值）；显式传 null 则清空
+      planParams:
+        planParams === undefined
+          ? undefined
+          : planParams === null
+            ? null
+            : typeof planParams === "object"
+              ? JSON.stringify(planParams)
+              : typeof planParams === "string" && planParams.trim()
+                ? planParams
+                : null,
     },
   };
 }

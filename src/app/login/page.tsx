@@ -118,11 +118,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", paddingTop: 80 }}>
-      <Card style={{ width: 380 }}>
-        <Typography.Title level={4} style={{ textAlign: "center", marginTop: 0 }}>
-          🧳 旅行规划
+    <div className="login-wrapper">
+      <Card className="login-card">
+        <div className="login-brand-icon">🧳</div>
+        <Typography.Title level={4} style={{ textAlign: "center", marginTop: 0, marginBottom: 4 }}>
+          旅行规划
         </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 28, fontSize: 13 }}>
+          把想去的地方，交给 AI 谱成行程
+        </Typography.Paragraph>
 
         {mode === "loading" && (
           <div style={{ textAlign: "center", padding: 32 }}>
@@ -132,9 +136,6 @@ export default function LoginPage() {
 
         {mode === "login" && (
           <>
-            <Typography.Paragraph type="secondary" style={{ textAlign: "center" }}>
-              请登录（账号由管理员创建）
-            </Typography.Paragraph>
             <Form onFinish={handleLogin}>
               <Form.Item name="username" rules={[{ required: true, message: "请输入用户名" }]}>
                 <Input prefix={<UserOutlined />} placeholder="用户名" size="large" autoFocus />
@@ -146,15 +147,18 @@ export default function LoginPage() {
                 登录
               </Button>
             </Form>
+            <Typography.Text type="secondary" style={{ display: "block", textAlign: "center", fontSize: 12, marginTop: 16 }}>
+              账号由管理员创建
+            </Typography.Text>
           </>
         )}
 
         {mode === "totp" && (
           <>
-            <Typography.Paragraph type="secondary" style={{ textAlign: "center" }}>
+            <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 20 }}>
               两步验证：请输入验证器 App 中的 6 位动态码
             </Typography.Paragraph>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
               <Input.OTP
                 length={6}
                 autoFocus
@@ -182,7 +186,7 @@ export default function LoginPage() {
 
         {mode === "setup" && (
           <>
-            <Typography.Paragraph type="secondary" style={{ textAlign: "center" }}>
+            <Typography.Paragraph type="secondary" style={{ textAlign: "center", marginBottom: 20 }}>
               首次使用：创建管理员账号
               <br />
               （已有的行程数据会自动归属到该账号）
