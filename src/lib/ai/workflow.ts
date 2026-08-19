@@ -15,6 +15,8 @@ export interface WorkflowState {
   generatedPlan?: AiPlan;
   // 自检后的方案（坐标匹配前）
   checkedPlan?: AiPlan;
+  // AI 判断的关注天（0-based），续跑时复用
+  focusDays?: number[];
 }
 
 const store = new Map<string, WorkflowState>();

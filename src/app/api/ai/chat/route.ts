@@ -64,6 +64,7 @@ export async function POST(request: Request) {
     workflowId?: unknown;
     resumeFrom?: unknown;
     confirmAnswer?: unknown;
+    focusDays?: unknown;
   } | null;
   const tripId = typeof body?.tripId === "string" ? body.tripId : "";
   const message = typeof body?.message === "string" ? body.message.trim() : "";
@@ -82,6 +83,9 @@ export async function POST(request: Request) {
   const denied = await requireTripEditByChild(user, tripId);
   if (denied) return denied;
   const confirmAnswer = typeof body?.confirmAnswer === "string" ? body.confirmAnswer.trim() : "";
+  const bodyFocusDays = Array.isArray(body?.focusDays)
+    ? (body!.focusDays as unknown[]).filter((d) => typeof d === "number" && (d as number) >= 0) as number[]
+    : undefined;
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
@@ -201,6 +205,8 @@ export async function POST(request: Request) {
           const fullInstruction = confirmAnswer
             ? `${message}（用户确认选择：${confirmAnswer}）`
             : message;
+          // AI 判断的关注天（优先用 AI 结果，回退到正则）
+          let focusDays: Set<number> | null = null;
           if (!confirmAnswer && (!from || from === "intent")) {
             sendStep(send, "confirm", "分析调整意图", "start");
             try {
@@ -211,19 +217,34 @@ export async function POST(request: Request) {
                 30000,
               );
               const confirmResult = parseConfirmResult(confirmRaw);
+              // 从 AI 结果获取 focusDays
+              focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
+                ? new Set(confirmResult.focusDays)
+                : detectFocusDays(fullInstruction);
               if (confirmResult.need && confirmResult.questions) {
                 sendStep(send, "confirm", "分析调整意图", "done", "需要用户确认");
                 send({
                   type: "confirm",
                   questions: confirmResult.questions,
+                  focusDays: confirmResult.focusDays,
                 });
                 return;
               }
               sendStep(send, "confirm", "分析调整意图", "done", "意图明确，无需确认");
             } catch {
               sendStep(send, "confirm", "分析调整意图", "done", "确认步骤跳过");
+              focusDays = detectFocusDays(fullInstruction);
             }
+          } else if (state.focusDays) {
+            // 续跑：从工作流状态恢复
+            focusDays = state.focusDays.length > 0 ? new Set(state.focusDays) : null;
+          } else if (bodyFocusDays !== undefined) {
+            // 前端回传的 AI focusDays（确认后重试场景）
+            focusDays = bodyFocusDays.length > 0 ? new Set(bodyFocusDays) : null;
+          } else {
+            focusDays = detectFocusDays(fullInstruction);
           }
+          state.focusDays = focusDays ? [...focusDays] : [];
 
           // 步骤 3a：生成调整方案（含校验重试、方案自检与坐标落地）
           if (from === "selfcheck") {
@@ -239,7 +260,6 @@ export async function POST(request: Request) {
           let selfCheckFailed = false;
           let coordsStarted = false;
           // 续跑自生成之后的步骤时复用缓存的提示词；否则重新构建
-          const focusDays = detectFocusDays(fullInstruction);
           let messages: ChatMessage[];
           if (state.messages && (from === "generate" || from === "selfcheck" || from === "coords")) {
             messages = state.messages;
@@ -296,7 +316,7 @@ export async function POST(request: Request) {
           if (coordsStarted) sendStep(send, "coords", "匹配地点坐标", "done");
           sendStep(send, "complete", "完成", "done", "调整方案已就绪，请确认后应用");
           const finalPlan = focusDays ? mergeFocusPlan(plan, items, focusDays) : plan;
-          send({ type: "result", plan: finalPlan });
+          send({ type: "result", plan: finalPlan, focusDays: focusDays ? [...focusDays] : [] });
           return;
         }
 

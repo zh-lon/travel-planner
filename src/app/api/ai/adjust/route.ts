@@ -18,11 +18,15 @@ export async function POST(request: Request) {
     instruction?: unknown;
     webSearch?: unknown;
     confirmAnswer?: unknown;
+    focusDays?: unknown;
   } | null;
   const tripId = typeof body?.tripId === "string" ? body.tripId : "";
   const instruction = typeof body?.instruction === "string" ? body.instruction.trim() : "";
   const useWebSearch = !!body?.webSearch;
   const confirmAnswer = typeof body?.confirmAnswer === "string" ? body.confirmAnswer.trim() : "";
+  const bodyFocusDays = Array.isArray(body?.focusDays)
+    ? (body!.focusDays as unknown[]).filter((d) => typeof d === "number" && (d as number) >= 0) as number[]
+    : undefined;
   if (!tripId) return NextResponse.json({ error: "缺少行程 ID" }, { status: 400 });
   if (!instruction) return NextResponse.json({ error: "请填写调整要求" }, { status: 400 });
   const denied = await requireTripEditByChild(user, tripId);
@@ -64,7 +68,16 @@ export async function POST(request: Request) {
   const fullInstruction = confirmAnswer
     ? `${instruction}（用户确认选择：${confirmAnswer}）`
     : instruction;
-  const focusDays = detectFocusDays(fullInstruction);
+  // AI 判断的关注天（优先用 AI 结果，回退到正则）
+  // 使用 let：preCheck 回调中会用 AI 结果覆盖
+  let focusDays: Set<number> | null;
+  if (confirmAnswer && bodyFocusDays !== undefined) {
+    // 前端回传的 AI focusDays（确认后重试场景）
+    focusDays = bodyFocusDays.length > 0 ? new Set(bodyFocusDays) : null;
+  } else {
+    // 初始请求或无前端回传：先用正则兑底，preCheck 中可能被 AI 结果覆盖
+    focusDays = detectFocusDays(fullInstruction);
+  }
   return planStreamResponse(
     async () => {
       const messages = focusDays
@@ -93,11 +106,16 @@ export async function POST(request: Request) {
                 30000,
               );
               const confirmResult = parseConfirmResult(confirmRaw);
+              // 从 AI 结果获取 focusDays
+              focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
+                ? new Set(confirmResult.focusDays)
+                : detectFocusDays(fullInstruction);
               if (confirmResult.need && confirmResult.questions) {
                 send({ type: "step", id: "confirm", label: "分析调整意图", status: "done", detail: "需要用户确认" });
                 send({
                   type: "confirm",
                   questions: confirmResult.questions,
+                  focusDays: confirmResult.focusDays,
                 });
                 return false;
               }
@@ -107,6 +125,7 @@ export async function POST(request: Request) {
             }
             return true;
           },
+      resultData: () => ({ focusDays: focusDays ? [...focusDays] : [] }),
     },
   );
 }

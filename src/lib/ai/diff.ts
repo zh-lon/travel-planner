@@ -232,6 +232,13 @@ export function detectFocusDays(instruction: string): Set<number> | null {
     const num = +m[1];
     if (num >= 1) days.add(num - 1);
   }
+  // 并列天匹配：跟随在"和/与/、/及"后面的"N天"（可省略"第"前缀）
+  // 如 "第11天和12天" → 11、12 都捕获
+  const conjRegex = /(?:和|与|、|及)\s*第?\s*(\d+)\s*天/g;
+  while ((m = conjRegex.exec(text)) !== null) {
+    const num = +m[1];
+    if (num >= 1) days.add(num - 1);
+  }
   // "前X天"
   const prefixMatch = text.match(/前\s*(\d+)\s*天/);
   if (prefixMatch) {
@@ -245,9 +252,10 @@ export function detectFocusDays(instruction: string): Set<number> | null {
 export function revertNonIntentFields(
   entries: DiffEntry[],
   instruction: string,
+  focusDaysOverride?: Set<number> | null,
 ): DiffEntry[] {
   const allowed = detectAdjustFields(instruction);
-  const focusDays = detectFocusDays(instruction);
+  const focusDays = focusDaysOverride !== undefined ? focusDaysOverride : detectFocusDays(instruction);
   // 无天级别过滤且无字段级别过滤时，直接返回
   if (allowed.has("all") && !focusDays) return entries;
   const allowDayChange = allowed.has("order") || allowed.has("days");

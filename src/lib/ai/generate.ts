@@ -229,7 +229,7 @@ export function buildConfirmPrompt(
   return [
     {
       role: "system",
-      content: `你是旅行规划助手。用户要求调整行程。请根据指令内容自主判断是否需要先向用户确认后再生成方案。\n\n无需确认时输出：{"need":false}\n需要确认时输出：{"need":true,"questions":[{"question":"简短提问","options":[{"label":"选项","desc":"简述"}]}]}\n\n可以提 1-3 个问题，每个问题给出 2-3 个选项。用户会逐个回答所有问题后再生成方案。\n\n只输出 JSON。`,
+      content: `你是旅行规划助手。用户要求调整行程。请根据指令内容自主判断：\n\n1. 用户要调整哪些天的行程。focusDays 是 0-based 的天索引数组（第 1 天 = 0，第 2 天 = 1…）。如果指令涉及所有天或无法确定具体天，返回空数组。\n2. 是否需要先向用户确认后再生成方案。可以提 1-3 个问题，每个问题给出 2-3 个选项。用户会逐个回答所有问题后再生成方案。\n\n无需确认时输出：{"need":false,"focusDays":[0,1]}\n需要确认时输出：{"need":true,"focusDays":[0,1],"questions":[{"question":"简短提问","options":[{"label":"选项","desc":"简述"}]}]}\n\n只输出 JSON。`,
     },
     {
       role: "user",
@@ -246,12 +246,17 @@ export interface ConfirmQuestion {
 export interface ConfirmResult {
   need: boolean;
   questions?: ConfirmQuestion[];
+  focusDays?: number[]; // 0-based 天索引，空数组或 undefined 表示所有天
 }
 
 export function parseConfirmResult(raw: string): ConfirmResult {
   try {
     const parsed = JSON.parse(raw);
-    if (parsed.need === false) return { need: false };
+    // 解析 focusDays（need 为 true 或 false 都可能返回）
+    const focusDays = Array.isArray(parsed.focusDays)
+      ? parsed.focusDays.filter((d: unknown) => typeof d === "number" && d >= 0) as number[]
+      : undefined;
+    if (parsed.need === false) return { need: false, focusDays };
     // 新格式：questions 数组
     if (parsed.need === true && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
       const questions = parsed.questions
@@ -266,7 +271,7 @@ export function parseConfirmResult(raw: string): ConfirmResult {
             })),
         }))
         .filter((q: { question: string; options: Array<{ label: string; desc: string }> }) => q.options.length > 0);
-      if (questions.length > 0) return { need: true, questions };
+      if (questions.length > 0) return { need: true, questions, focusDays };
     }
     // 旧格式兼容：单个 question + options
     if (parsed.need === true && Array.isArray(parsed.options) && parsed.options.length > 0) {
@@ -281,6 +286,7 @@ export function parseConfirmResult(raw: string): ConfirmResult {
               desc: typeof o.desc === "string" ? o.desc : "",
             })),
         }],
+        focusDays,
       };
     }
   } catch {
@@ -681,6 +687,7 @@ export function planStreamResponse(
   options?: {
     transformPlan?: (plan: AiPlan) => AiPlan;
     preCheck?: (send: (obj: unknown) => void, config: AiConfig, settings: SettingsMap) => Promise<boolean>;
+    resultData?: () => Record<string, unknown>;
   },
 ): Response {
   const encoder = new TextEncoder();
@@ -717,7 +724,8 @@ export function planStreamResponse(
         const plan = await runPlanGeneration(send, config, settings, input);
         if (plan) {
           const finalPlan = options?.transformPlan ? options.transformPlan(plan) : plan;
-          send({ type: "result", plan: finalPlan });
+          const extras = options?.resultData ? options.resultData() : {};
+          send({ type: "result", plan: finalPlan, ...extras });
         }
       } catch (err) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });

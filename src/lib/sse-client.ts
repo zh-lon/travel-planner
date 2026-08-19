@@ -22,6 +22,8 @@ export interface SseEventData {
   detail?: string;
   // 确认事件字段（AI 要求用户逐个回答问题）
   questions?: Array<{ question: string; options: Array<{ label: string; desc: string }> }>;
+  // AI 判断的关注天（0-based），空数组或 undefined 表示所有天
+  focusDays?: number[];
 }
 
 export async function postSse(

@@ -64,8 +64,10 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
     currentIdx: number;
     answers: string[];
     msg: string;
+    focusDays?: number[]; // AI 判断的关注天，回传后端
   } | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
+  const [aiFocusDays, setAiFocusDays] = useState<number[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const failedMsgRef = useRef<string>("");
@@ -73,8 +75,14 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
   const failedStepRef = useRef<string>("");
 
   const entries = useMemo(
-    () => (plan ? revertNonIntentFields(diffPlan(trip.items, plan), adjustInstruction) : []),
-    [plan, trip.items, adjustInstruction],
+    () => (plan
+      ? revertNonIntentFields(
+          diffPlan(trip.items, plan),
+          adjustInstruction,
+          aiFocusDays !== null ? new Set(aiFocusDays) : null,
+        )
+      : []),
+    [plan, trip.items, adjustInstruction, aiFocusDays],
   );
 
   useEffect(() => {
@@ -95,6 +103,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
     resume?: { workflowId: string; from: string },
     keepSteps = false,
     confirmAnswer?: string,
+    focusDays?: number[],
   ) => {
     const msg = (text ?? inputValue).trim();
     if (!msg) {
@@ -136,6 +145,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
           webSearch,
           ...(resume ? { workflowId: resume.workflowId, resumeFrom: resume.from } : {}),
           ...(confirmAnswer ? { confirmAnswer } : {}),
+          ...(confirmAnswer && focusDays ? { focusDays } : {}),
         },
         (event) => {
           if (event.type === "workflow" && event.id) workflowIdRef.current = String(event.id);
@@ -169,6 +179,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
           } else if (event.type === "result" && event.plan) {
             gotTerminal = true;
             setPlan(event.plan as AiPlan);
+            setAiFocusDays(Array.isArray(event.focusDays) ? event.focusDays : null);
             setAdjustInstruction(confirmAnswer ? `${msg}（用户确认选择：${confirmAnswer}）` : msg);
             setStreamText("");
             setDiffOpen(true);
@@ -180,6 +191,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
               currentIdx: 0,
               answers: [],
               msg,
+              focusDays: Array.isArray(event.focusDays) ? event.focusDays : undefined,
             });
             setStreamText("");
             setPhase("idle");
@@ -238,7 +250,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
         .map((q, i) => `${q.question}：${newAnswers[i]}`)
         .join("；");
       setConfirmData(null);
-      handleSend(data.msg, false, undefined, false, answersStr);
+      handleSend(data.msg, false, undefined, false, answersStr, data.focusDays);
       return;
     }
     setConfirmData({ ...data, currentIdx: nextIdx, answers: newAnswers });

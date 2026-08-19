@@ -31,15 +31,23 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     questions: Array<{ question: string; options: Array<{ label: string; desc: string }> }>;
     currentIdx: number;
     answers: string[];
+    focusDays?: number[];
   } | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
+  const [aiFocusDays, setAiFocusDays] = useState<number[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
   // 对比：AI 方案 vs 现有行程
   const entries = useMemo(
-    () => (plan ? revertNonIntentFields(diffPlan(trip.items, plan), instruction) : []),
-    [plan, trip.items, instruction],
+    () => (plan
+      ? revertNonIntentFields(
+          diffPlan(trip.items, plan),
+          instruction,
+          aiFocusDays !== null ? new Set(aiFocusDays) : null,
+        )
+      : []),
+    [plan, trip.items, instruction, aiFocusDays],
   );
 
   // 方案到达时默认全选所有变更
@@ -56,6 +64,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
       setStatus("");
       setConfirmData(null);
       setCustomAnswer("");
+      setAiFocusDays(null);
     }
   }, [open]);
 
@@ -63,7 +72,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
   }, [streamText, status]);
 
-  const handleGenerate = async (confirmAnswer?: string) => {
+  const handleGenerate = async (confirmAnswer?: string, focusDays?: number[]) => {
     if (!instruction.trim()) {
       message.warning("请先填写调整要求");
       return;
@@ -76,18 +85,20 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
     try {
       await postSse(
         "/api/ai/adjust",
-        { tripId: trip.id, instruction, ...(confirmAnswer ? { confirmAnswer } : {}) },
+        { tripId: trip.id, instruction, ...(confirmAnswer ? { confirmAnswer } : {}), ...(confirmAnswer && focusDays ? { focusDays } : {}) },
         (event) => {
           if (event.type === "delta" && event.text) setStreamText((prev) => prev + event.text);
           else if (event.type === "status" && event.text) setStatus(event.text);
           else if (event.type === "result" && event.plan) {
             setPlan(event.plan as AiPlan);
+            setAiFocusDays(Array.isArray(event.focusDays) ? event.focusDays : null);
             setPhase("preview");
           } else if (event.type === "confirm") {
             setConfirmData({
               questions: event.questions ?? [],
               currentIdx: 0,
               answers: [],
+              focusDays: Array.isArray(event.focusDays) ? event.focusDays : undefined,
             });
             setPhase("confirm");
           } else if (event.type === "error") {
@@ -117,7 +128,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
         .map((q, i) => `${q.question}：${newAnswers[i]}`)
         .join("；");
       setConfirmData(null);
-      handleGenerate(answersStr);
+      handleGenerate(answersStr, data.focusDays);
       return;
     }
     setConfirmData({ ...data, currentIdx: nextIdx, answers: newAnswers });
