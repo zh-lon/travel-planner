@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { App, Button, Card, Col, Empty, Popconfirm, Row, Space, Spin, Tag, Typography } from "antd";
 import {
   CalendarOutlined,
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   EnvironmentOutlined,
@@ -77,6 +78,19 @@ export default function HomePage() {
       load();
     } else {
       message.error("删除失败");
+    }
+  };
+
+  const handleCopy = async (id: string) => {
+    const hide = message.loading("正在复制行程…");
+    const res = await fetch(`/api/trips/${id}/copy`, { method: "POST" }).catch(() => null);
+    hide();
+    const data = res ? ((await res.json().catch(() => ({}))) as { id?: string; error?: string }) : {};
+    if (res?.ok && data.id) {
+      message.success("行程已复制");
+      load();
+    } else {
+      message.error(data.error || "复制失败");
     }
   };
 
@@ -225,6 +239,7 @@ export default function HomePage() {
             setEditing(trip);
             setModalOpen(true);
           }}
+          onCopyTrip={(id) => handleCopy(id)}
           onDeleteTrip={(tripId) => {
             modal.confirm({
               title: "删除行程",
@@ -361,6 +376,15 @@ export default function HomePage() {
                   actions={
                     isOwner
                       ? [
+                          <span
+                            key="copy"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopy(trip.id);
+                            }}
+                          >
+                            <CopyOutlined /> 复制
+                          </span>,
                           <span
                             key="edit"
                             onClick={(e) => {

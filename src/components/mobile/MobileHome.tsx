@@ -4,6 +4,7 @@
 import { Button, Card, Dropdown, Empty, Space, Tag, Typography } from "antd";
 import {
   CalendarOutlined,
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   EllipsisOutlined,
@@ -22,6 +23,7 @@ interface Props {
   onOpenTrip: (id: string) => void;
   onNewTrip: () => void;
   onEditTrip: (trip: TripSummary) => void;
+  onCopyTrip: (id: string) => void;
   onDeleteTrip: (id: string) => void;
   onAiPlan: () => void;
   onImportGuide: () => void;
@@ -51,6 +53,7 @@ export default function MobileHome({
   onOpenTrip,
   onNewTrip,
   onEditTrip,
+  onCopyTrip,
   onDeleteTrip,
   onAiPlan,
   onImportGuide,
@@ -144,12 +147,14 @@ export default function MobileHome({
                         trigger={["click"]}
                         menu={{
                           items: [
+                            { key: "copy", icon: <CopyOutlined />, label: "复制" },
                             { key: "edit", icon: <EditOutlined />, label: "编辑" },
                             { key: "delete", icon: <DeleteOutlined />, label: "删除", danger: true },
                           ],
                           onClick: ({ key, domEvent }) => {
                             domEvent.stopPropagation();
-                            if (key === "edit") onEditTrip(trip);
+                            if (key === "copy") onCopyTrip(trip.id);
+                            else if (key === "edit") onEditTrip(trip);
                             else if (key === "delete") onDeleteTrip(trip.id);
                           },
                         }}

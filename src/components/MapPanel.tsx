@@ -122,6 +122,49 @@ function searchRoute(AMap: any, mode: SegMode, from: [number, number], to: [numb
   });
 }
 
+// 模块级路线缓存：切换 Tab 重新挂载组件时缓存仍然有效
+// 三级缓存策略：内存 → 数据库 → 高德实时规划
+const moduleRouteCache = new Map<string, SegRoute | null>();
+
+// 异步批量加载路线缓存，填充到内存缓存（key 使用 ";" 分隔，因为 key 内含 "," 和 "|"）
+async function loadRoutesFromDb(keys: string[]): Promise<void> {
+  if (typeof window === "undefined" || keys.length === 0) return;
+  const params = new URLSearchParams({ keys: keys.join(";") });
+  const res = await fetch(`/api/route-cache?${params}`);
+  if (!res.ok) return;
+  const data = (await res.json()) as { routes: Record<string, SegRoute | null> };
+  for (const [k, v] of Object.entries(data.routes)) {
+    // 跳过数据库中可能存在的旧 null 记录，不写入内存缓存
+    if (v !== null) moduleRouteCache.set(k, v);
+  }
+}
+
+// 异步保存路线缓存到数据库（fire-and-forget，不阻塞 UI 渲染）
+function saveRoutesToDb(routes: Record<string, SegRoute | null>): void {
+  if (typeof window === "undefined") return;
+  // 只持久化成功的路线，失败值（null）仅留在内存缓存，避免瞬时故障被永久固化
+  const successOnly: Record<string, SegRoute> = {};
+  for (const [key, value] of Object.entries(routes)) {
+    if (value !== null) successOnly[key] = value;
+  }
+  if (Object.keys(successOnly).length === 0) return;
+  fetch("/api/route-cache", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ routes: successOnly }),
+  }).catch(() => {
+    /* 忽略保存失败，不影响运行 */
+  });
+}
+
+// 异步删除单条路线缓存（重试时清除失败记录，fire-and-forget）
+function deleteRouteFromDb(key: string): void {
+  if (typeof window === "undefined") return;
+  fetch(`/api/route-cache?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => {
+    /* 忽略删除失败 */
+  });
+}
+
 export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditItem, onReorder, onItemsChanged, onShowDetail }: Props) {
   const { message } = App.useApp();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,7 +176,6 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
   const overlaysRef = useRef<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const infoWindowRef = useRef<any>(null);
-  const routeCacheRef = useRef(new Map<string, SegRoute | null>());
   const genRef = useRef(0);
   const fitKeyRef = useRef("");
 
@@ -144,10 +186,12 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
   const [overrides, setOverrides] = useState<Record<string, SegMode | null>>({});
   const [segStats, setSegStats] = useState<Record<string, SegStat>>({});
   const [routing, setRouting] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [picking, setPicking] = useState<{ itemId: string; title: string } | null>(null);
   const [positioning, setPositioning] = useState(false); // 定位保存中
   const pickingRef = useRef<{ itemId: string; title: string } | null>(null);
   const pickHandlerRef = useRef<((lng: number, lat: number) => void) | null>(null);
+  const retryingRef = useRef<Set<string>>(new Set());
 
   // 同步 picking 到 ref，确保 pickHandler 始终拿到最新值
   useEffect(() => {
@@ -258,7 +302,7 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
         dayPoints.push({ dayIndex: d, points });
       }
 
-      // 逐段确定方式并规划（带缓存）
+      // 逐段确定方式并规划（三级缓存：内存 → 数据库 → 高德）
       const segKey = (m: SegMode, a: [number, number], b: [number, number]) =>
         `${m}|${a[0]},${a[1]}|${b[0]},${b[1]}`;
       interface SegDraw {
@@ -271,7 +315,7 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
         failed: boolean;
       }
       const segments: SegDraw[] = [];
-      const needFetch: SegDraw[] = [];
+      const missingKeys = new Set<string>();
       for (const { dayIndex, points } of dayPoints) {
         for (let i = 0; i + 1 < points.length; i++) {
           const dest = points[i + 1];
@@ -285,29 +329,52 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
             route: null,
             failed: false,
           };
-          if (mode !== "line" && !routeCacheRef.current.has(segKey(mode, seg.from, seg.to))) {
-            needFetch.push(seg);
+          if (mode !== "line" && !moduleRouteCache.has(segKey(mode, seg.from, seg.to))) {
+            missingKeys.add(segKey(mode, seg.from, seg.to));
           }
           segments.push(seg);
         }
       }
 
+      // 批量从数据库加载内存中缺失的缓存
+      if (missingKeys.size > 0) {
+        try {
+          await loadRoutesFromDb([...missingKeys]);
+        } catch {
+          /* 数据库加载失败，继续请求高德 */
+        }
+        if (genRef.current !== gen) return;
+      }
+
+      // 数据库加载后仍缺失的段，请求高德实时规划
+      const needFetch: SegDraw[] = [];
+      for (const seg of segments) {
+        if (seg.mode === "line") continue;
+        if (!moduleRouteCache.has(segKey(seg.mode, seg.from, seg.to))) {
+          needFetch.push(seg);
+        }
+      }
+
       if (needFetch.length > 0) {
         setRouting(true);
+        const fetched: Record<string, SegRoute | null> = {};
         for (const seg of needFetch) {
           const key = segKey(seg.mode, seg.from, seg.to);
-          if (!routeCacheRef.current.has(key)) {
+          if (!moduleRouteCache.has(key)) {
             const route = await searchRoute(AMap, seg.mode, seg.from, seg.to);
             if (genRef.current !== gen) return;
-            routeCacheRef.current.set(key, route);
+            moduleRouteCache.set(key, route);
+            fetched[key] = route;
           }
         }
         setRouting(false);
+        // 异步保存到数据库（fire-and-forget）
+        saveRoutesToDb(fetched);
       }
       if (genRef.current !== gen) return;
       for (const seg of segments) {
         if (seg.mode === "line") continue;
-        seg.route = routeCacheRef.current.get(segKey(seg.mode, seg.from, seg.to)) ?? null;
+        seg.route = moduleRouteCache.get(segKey(seg.mode, seg.from, seg.to)) ?? null;
         seg.failed = seg.route == null;
       }
 
@@ -400,10 +467,12 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
       }
       overlaysRef.current = overlays;
       setSegStats(stats);
+      // 路线规划整轮完成，解除重试保护
+      retryingRef.current.clear();
     };
 
     run();
-  }, [status, items, dayFilter, globalMode, overrides, dayCount, effectiveMode, openInfo]);
+  }, [status, items, dayFilter, globalMode, overrides, dayCount, effectiveMode, openInfo, retryKey]);
 
   // 地图选点定位：进入/退出选点模式与落点保存
   const startPick = (item: ItineraryItemT) => {
@@ -459,6 +528,34 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
       onItemsChanged?.();
     }
   };
+
+  // 重新规划失败的路段：清除缓存并触发重新计算
+  const handleRetryRoute = useCallback(
+    async (destItem: ItineraryItemT) => {
+      const mode = effectiveMode(destItem);
+      if (mode === "line") return;
+      if (destItem.lng == null || destItem.lat == null) return;
+      const dayItems = items
+        .filter((i) => i.dayIndex === destItem.dayIndex)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      const idx = dayItems.findIndex((i) => i.id === destItem.id);
+      if (idx <= 0) return;
+      // 取 destItem 之前最近一个已定位的行程项作为起点（路线段仅基于连续已定位项构建）
+      const prev = dayItems
+        .slice(0, idx)
+        .reverse()
+        .find((i) => i.lng != null && i.lat != null);
+      if (!prev) return;
+      const key = `${mode}|${prev.lng},${prev.lat}|${destItem.lng},${destItem.lat}`;
+      if (retryingRef.current.has(key)) return; // 防重复触发
+      retryingRef.current.add(key);
+      moduleRouteCache.delete(key);
+      // 等待 DELETE 完成再触发重试，避免与随后的 GET 竞态读回旧 null 记录
+      await fetch(`/api/route-cache?key=${encodeURIComponent(key)}`, { method: "DELETE" }).catch(() => {});
+      setRetryKey((k) => k + 1);
+    },
+    [items, effectiveMode],
+  );
 
   const visibleDayIndices = Array.from({ length: dayCount }, (_, d) => d).filter(
     (d) => dayFilter === -1 || dayFilter === d,
@@ -708,10 +805,20 @@ export default function MapPanel({ items, dayCount, readOnly, onAddItem, onEditI
                             <Typography.Text
                               type="secondary"
                               style={{ fontSize: 12, flex: 1, minWidth: 0 }}
-                              ellipsis
+                              ellipsis={{ tooltip: segStatText(segStats[item.id]) }}
                             >
                               {segStatText(segStats[item.id])}
                             </Typography.Text>
+                            {segStats[item.id]?.straight && !readOnly && (
+                              <Button
+                                type="link"
+                                size="small"
+                                style={{ fontSize: 11, padding: 0, height: 20 }}
+                                onClick={() => handleRetryRoute(item)}
+                              >
+                                重新规划
+                              </Button>
+                            )}
                           </div>
                         )}
                         <div

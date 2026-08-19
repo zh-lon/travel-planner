@@ -131,3 +131,10 @@ model PoiExplorerCache {
 
   @@unique([tripId, userId])
 }
+
+model RouteCache {
+  id        String   @id @default(cuid())
+  cacheKey  String   @unique
+  data      String   // SegRoute JSON，"null" 表示规划失败
+  updatedAt DateTime @updatedAt
+}

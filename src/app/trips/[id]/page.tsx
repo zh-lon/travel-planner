@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { App, Button, Card, Dropdown, Spin, Tabs, Tag, Typography } from "antd";
 import {
+  CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -212,6 +213,19 @@ export default function TripDetailPage() {
     }
   };
 
+  const handleCopyTrip = async () => {
+    const hide = message.loading("正在复制行程…");
+    const res = await fetch(`/api/trips/${id}/copy`, { method: "POST" }).catch(() => null);
+    hide();
+    const data = res ? ((await res.json().catch(() => ({}))) as { id?: string; error?: string }) : {};
+    if (res?.ok && data.id) {
+      message.success("行程已复制");
+      router.push(`/trips/${data.id}`);
+    } else {
+      message.error(data.error || "复制失败");
+    }
+  };
+
   const handleExport = async (key: string) => {
     if (!trip) return;
     if (key === "json") {
@@ -267,6 +281,7 @@ export default function TripDetailPage() {
                 { key: "inspect", icon: <SafetyCertificateOutlined />, label: "行程体检" },
                 ...(isOwner2
                   ? [
+                      { key: "copy", icon: <CopyOutlined />, label: "复制行程" },
                       { key: "memberShare", icon: <ShareAltOutlined />, label: `成员共享${trip.shares && trip.shares.length > 0 ? `（${trip.shares.length}）` : ""}` },
                       { key: "edit", icon: <EditOutlined />, label: "编辑行程" },
                     ]
@@ -285,6 +300,7 @@ export default function TripDetailPage() {
               ],
               onClick: ({ key }) => {
                 if (key === "inspect") setInspectOpen(true);
+                else if (key === "copy") handleCopyTrip();
                 else if (key === "memberShare") setShareOpen(true);
                 else if (key === "edit") setTripModalOpen(true);
                 else if (key === "delete") {
@@ -325,6 +341,9 @@ export default function TripDetailPage() {
         </span>
         <div style={{ flex: 1 }} />
         <Button size="middle" icon={<SafetyCertificateOutlined />} onClick={() => setInspectOpen(true)}>体检</Button>
+        {isOwner2 && (
+          <Button size="middle" icon={<CopyOutlined />} onClick={handleCopyTrip}>复制</Button>
+        )}
         {isOwner2 && (
           <Button size="middle" icon={<ShareAltOutlined />} onClick={() => setGuideShareOpen(true)}>共享</Button>
         )}
