@@ -11,10 +11,8 @@ export interface WorkflowState {
   searchContext?: string;
   // 意图识别结果（chat 工作流）
   isAdjust?: boolean;
-  // 生成并通过校验的方案（自检前）
+  // 生成并通过校验的方案（坐标匹配前）
   generatedPlan?: AiPlan;
-  // 自检后的方案（坐标匹配前）
-  checkedPlan?: AiPlan;
   // AI 判断的关注天（0-based），续跑时复用
   focusDays?: number[];
 }

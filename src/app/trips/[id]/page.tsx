@@ -10,11 +10,13 @@ import {
   DownloadOutlined,
   EditOutlined,
   EllipsisOutlined,
+  RobotOutlined,
   SafetyCertificateOutlined,
   ShareAltOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import AiAssistantPanel from "@/components/AiAssistantPanel";
+import AiSelfCheckModal from "@/components/AiSelfCheckModal";
 import ChecklistPanel from "@/components/ChecklistPanel";
 import CoplanDrawer from "@/components/CoplanDrawer";
 import ExpensesPanel from "@/components/ExpensesPanel";
@@ -44,6 +46,7 @@ export default function TripDetailPage() {
   const [tripModalOpen, setTripModalOpen] = useState(false);
   const [aiPanelCollapsed, setAiPanelCollapsed] = useState(false);
   const [inspectOpen, setInspectOpen] = useState(false);
+  const [selfCheckOpen, setSelfCheckOpen] = useState(false);
   const [coplanOpen, setCoplanOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<ItineraryItemT | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -279,6 +282,7 @@ export default function TripDetailPage() {
             menu={{
               items: [
                 { key: "inspect", icon: <SafetyCertificateOutlined />, label: "行程体检" },
+                { key: "selfcheck", icon: <RobotOutlined />, label: "方案自检" },
                 ...(isOwner2
                   ? [
                       { key: "copy", icon: <CopyOutlined />, label: "复制行程" },
@@ -300,6 +304,7 @@ export default function TripDetailPage() {
               ],
               onClick: ({ key }) => {
                 if (key === "inspect") setInspectOpen(true);
+                else if (key === "selfcheck") setSelfCheckOpen(true);
                 else if (key === "copy") handleCopyTrip();
                 else if (key === "memberShare") setShareOpen(true);
                 else if (key === "edit") setTripModalOpen(true);
@@ -341,6 +346,7 @@ export default function TripDetailPage() {
         </span>
         <div style={{ flex: 1 }} />
         <Button size="middle" icon={<SafetyCertificateOutlined />} onClick={() => setInspectOpen(true)}>体检</Button>
+        <Button size="middle" icon={<RobotOutlined />} onClick={() => setSelfCheckOpen(true)}>自检</Button>
         {isOwner2 && (
           <Button size="middle" icon={<CopyOutlined />} onClick={handleCopyTrip}>复制</Button>
         )}
@@ -469,6 +475,12 @@ export default function TripDetailPage() {
         }}
       />
       <TripInspectDrawer open={inspectOpen} trip={trip} onClose={() => setInspectOpen(false)} />
+      <AiSelfCheckModal
+        open={selfCheckOpen}
+        trip={trip}
+        onCancel={() => setSelfCheckOpen(false)}
+        onApplied={() => { setSelfCheckOpen(false); load(); }}
+      />
       <CoplanDrawer
         open={coplanOpen}
         trip={trip}

@@ -16,7 +16,7 @@ import type { ChatMessage } from "@/lib/ai/client";
 export const dynamic = "force-dynamic";
 
 // 一键生成行程的工作流编排：
-// 确认基础信息 →（可选）联网搜索参考资料 → 生成行程方案（含校验重试）→ 方案自检 → 匹配地点坐标 → 完成
+// 确认基础信息 →（可选）联网搜索参考资料 → 生成行程方案（含校验重试）→ 匹配地点坐标 → 完成
 export async function POST(request: Request) {
   const user = await requireUser(request);
   if (user instanceof NextResponse) return user;
@@ -84,11 +84,10 @@ export async function POST(request: Request) {
         const reqWorkflowId = typeof body!.workflowId === "string" ? body!.workflowId : "";
         const resumeFrom = typeof body!.resumeFrom === "string" ? body!.resumeFrom : "";
         const cached = reqWorkflowId ? getWorkflow(reqWorkflowId) : null;
-        let from: "search" | "generate" | "selfcheck" | "coords" | null = null;
+        let from: "search" | "generate" | "coords" | null = null;
         if (cached) {
           if (resumeFrom === "search" || resumeFrom === "generate") from = cached.messages ? resumeFrom : null;
-          else if (resumeFrom === "selfcheck") from = cached.generatedPlan ? "selfcheck" : null;
-          else if (resumeFrom === "coords") from = cached.checkedPlan || cached.generatedPlan ? "coords" : null;
+          else if (resumeFrom === "coords") from = cached.generatedPlan ? "coords" : null;
         }
         const workflowId = from ? reqWorkflowId : newWorkflowId();
         const state = from ? cached! : { createdAt: Date.now() };
@@ -141,18 +140,12 @@ export async function POST(request: Request) {
           }
         }
 
-        // 步骤 3/4/5：生成行程方案（含校验重试）、方案自检与坐标落地
-        if (from === "selfcheck") {
+        // 步骤 3/4：生成行程方案（含校验重试）与坐标落地
+        if (from === "coords") {
           sendStep(send, "generate", "生成行程方案", "done", "使用上次已生成的方案");
-          sendStep(send, "selfcheck", "方案自检", "start");
-        } else if (from === "coords") {
-          sendStep(send, "generate", "生成行程方案", "done", "使用上次已生成的方案");
-          sendStep(send, "selfcheck", "方案自检", "done", "使用上次自检结果");
         } else {
           sendStep(send, "generate", "生成行程方案", "start");
         }
-        let selfCheckDone = false;
-        let selfCheckFailed = false;
         let coordsStarted = false;
         const plan = await runPlanGeneration(
           send,
@@ -163,37 +156,22 @@ export async function POST(request: Request) {
             onValidated: (p) => {
               state.generatedPlan = p;
               sendStep(send, "generate", "生成行程方案", "done", "方案已通过校验");
-              sendStep(send, "selfcheck", "方案自检", "start");
-            },
-            onSelfCheckFailed: (detail) => {
-              selfCheckFailed = true;
-              sendStep(send, "selfcheck", "方案自检", "error", detail);
-            },
-            onSelfCheckDone: (detail, p) => {
-              selfCheckDone = true;
-              state.checkedPlan = p;
-              sendStep(send, "selfcheck", "方案自检", "done", detail);
             },
             onCoordsStart: () => {
               coordsStarted = true;
               sendStep(send, "coords", "匹配地点坐标", "start");
             },
           },
-          from === "selfcheck"
-            ? { from: "selfcheck", plan: state.generatedPlan! }
-            : from === "coords"
-              ? { from: "coords", plan: state.checkedPlan ?? state.generatedPlan! }
-              : undefined,
+          from === "coords"
+            ? { from: "coords", plan: state.generatedPlan! }
+            : undefined,
         );
         if (!plan) {
           // runPlanGeneration 已推送 error 事件；按实际失败环节标记步骤
           if (coordsStarted) sendStep(send, "coords", "匹配地点坐标", "error");
-          else if (selfCheckFailed) {
-            // 步骤已在 onSelfCheckFailed 中标记
-          } else sendStep(send, "generate", "生成行程方案", "error");
+          else sendStep(send, "generate", "生成行程方案", "error");
           return;
         }
-        if (!selfCheckDone) sendStep(send, "selfcheck", "方案自检", "done", "已跳过");
         if (coordsStarted) sendStep(send, "coords", "匹配地点坐标", "done");
         sendStep(send, "complete", "完成", "done", "行程方案已就绪，请预览后导入");
         send({ type: "result", plan });

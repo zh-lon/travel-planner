@@ -57,6 +57,9 @@ export default function AiDiffPreview({
   const [showUnchanged, setShowUnchanged] = useState(false);
 
   const changed = entries.filter((e) => e.kind !== "unchanged");
+  // 默认 selectable 只含 added + modified（不含 removed），
+  // 全选按钮不会自动勾选删除项，防止用户误删
+  const selectable = entries.filter((e) => e.kind === "added" || e.kind === "modified");
   const counts = {
     added: entries.filter((e) => e.kind === "added").length,
     modified: entries.filter((e) => e.kind === "modified").length,
@@ -64,8 +67,8 @@ export default function AiDiffPreview({
     unchanged: entries.filter((e) => e.kind === "unchanged").length,
   };
   const dayChanged = oldDayCount != null && planDays != null && oldDayCount !== planDays;
-  const allSelected = changed.length > 0 && changed.every((e) => selected.has(e.key));
-  const someSelected = changed.some((e) => selected.has(e.key));
+  const allSelected = selectable.length > 0 && selectable.every((e) => selected.has(e.key));
+  const someSelected = selectable.some((e) => selected.has(e.key));
 
   const toggle = (key: string, checked: boolean) => {
     const next = new Set(selected);
@@ -83,7 +86,7 @@ export default function AiDiffPreview({
         showIcon
         message={
           changed.length > 0
-            ? `对比结果：新增 ${counts.added} · 修改 ${counts.modified} · 删除 ${counts.removed} · 不变 ${counts.unchanged}，已勾选 ${changed.filter((e) => selected.has(e.key)).length} 项变更` +
+            ? `对比结果：新增 ${counts.added} · 修改 ${counts.modified} · 删除 ${counts.removed} · 不变 ${counts.unchanged}，已勾选 ${changed.filter((e) => selected.has(e.key)).length} 项变更（删除项需手动勾选）` +
               (dayChanged ? `；天数 ${oldDayCount} 天 → ${planDays} 天` : "")
             : "AI 方案与现有行程没有差异"
         }
@@ -92,11 +95,17 @@ export default function AiDiffPreview({
         <Checkbox
           checked={allSelected}
           indeterminate={someSelected && !allSelected}
-          onChange={(e) =>
-            onSelectionChange(new Set(e.target.checked ? changed.map((x) => x.key) : []))
-          }
+          onChange={(e) => {
+            const next = new Set(selected);
+            // 全选只切换 added + modified，不影响已手动勾选的 removed 项
+            for (const item of selectable) {
+              if (e.target.checked) next.add(item.key);
+              else next.delete(item.key);
+            }
+            onSelectionChange(next);
+          }}
         >
-          全选变更
+          全选新增/修改
         </Checkbox>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <Switch size="small" checked={showUnchanged} onChange={setShowUnchanged} />

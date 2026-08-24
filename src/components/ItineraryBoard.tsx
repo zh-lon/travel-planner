@@ -6,7 +6,6 @@ import {
   DragOverlay,
   PointerSensor,
   closestCenter,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -15,7 +14,7 @@ import {
   type CollisionDetection,
   type DroppableContainer,
 } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, useSortable, horizontalListSortingStrategy, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { DeleteOutlined, EnvironmentOutlined, HolderOutlined, LeftOutlined, MoreOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
 import { Button, Dropdown, Popconfirm, Tag, Typography } from "antd";
@@ -78,8 +77,10 @@ const SOCIAL_SEARCHES = [
 // 若在列内且指针也在某个 sortable item 内则返回 item，否则返回 day 列
 function makeCollisionDetection(): CollisionDetection {
   return (args) => {
-    const { droppableContainers, pointerCoordinates } = args;
+    const { active, droppableContainers, pointerCoordinates } = args;
     if (!pointerCoordinates) return [];
+    const activeId = String(active.id);
+    const isDraggingDay = activeId.startsWith("day-");
 
     // 先找出所有 day 列和所有 sortable item
     const dayCols: DroppableContainer[] = [];
@@ -91,6 +92,19 @@ function makeCollisionDetection(): CollisionDetection {
       } else {
         sortables.push(c);
       }
+    }
+
+    // 拖动整列天：按指针所在的目标天列横向重排
+    if (isDraggingDay) {
+      for (const col of dayCols) {
+        if (String(col.id) === activeId) continue;
+        const r = col.rect.current;
+        if (!r) continue;
+        if (pointerCoordinates.x >= r.left && pointerCoordinates.x <= r.right) {
+          return [{ id: col.id }];
+        }
+      }
+      return [];
     }
 
     // 检查指针是否在某个 day 列内
@@ -329,6 +343,7 @@ function DayColumn({
   onDeleteItem,
   onInsertDay,
   onRemoveDay,
+  onMoveDay,
 }: {
   dayIndex: number;
   dayCount: number;
@@ -341,16 +356,45 @@ function DayColumn({
   onDeleteItem: (item: ItineraryItemT) => void;
   onInsertDay: (dayIndex: number) => void;
   onRemoveDay: (dayIndex: number) => void;
+  onMoveDay: (from: number, to: number) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `day-${dayIndex}` });
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging, isOver } = useSortable({
+    id: `day-${dayIndex}`,
+  });
   const cost = items.reduce((sum, i) => sum + (i.estimatedCost ?? 0), 0);
   const pace = dayPace(items);
   return (
     <div
       ref={setNodeRef}
       className={`board-day-col${isOver ? " drag-over" : ""}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
     >
       <div style={{ marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 4 }}>
+        {!readOnly && (
+          <span
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            className="board-day-grip"
+            title="拖动调整天顺序"
+            style={{
+              cursor: "grab",
+              color: "#bfbfbf",
+              touchAction: "none",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              paddingTop: 2,
+              transition: "color 0.2s",
+            }}
+          >
+            <HolderOutlined style={{ transform: "rotate(90deg)" }} />
+          </span>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Typography.Text strong style={{ fontSize: 15 }}>第 {dayIndex + 1} 天</Typography.Text>
@@ -373,13 +417,18 @@ function DayColumn({
             trigger={["click"]}
             menu={{
               items: [
+                { key: "left", label: "左移一天", disabled: dayIndex === 0 },
+                { key: "right", label: "右移一天", disabled: dayIndex === dayCount - 1 },
+                { type: "divider" as const },
                 { key: "before", label: "在这天前插入一天" },
                 { key: "after", label: "在这天后插入一天" },
                 { type: "divider" as const },
                 { key: "remove", label: "删除这一天", danger: true, disabled: dayCount <= 1 },
               ],
               onClick: ({ key }) => {
-                if (key === "remove") onRemoveDay(dayIndex);
+                if (key === "left") onMoveDay(dayIndex, dayIndex - 1);
+                else if (key === "right") onMoveDay(dayIndex, dayIndex + 1);
+                else if (key === "remove") onRemoveDay(dayIndex);
                 else onInsertDay(key === "before" ? dayIndex : dayIndex + 1);
               },
             }}
@@ -562,14 +611,21 @@ export default function ItineraryBoard({
 
   const handleDragStart = ({ active }: DragStartEvent) => {
     snapshotRef.current = signature(columns);
-    const day = findDay(String(active.id));
-    setActiveItem(day === null ? null : (columns[day].find((i) => i.id === String(active.id)) ?? null));
+    const activeId = String(active.id);
+    if (activeId.startsWith("day-")) {
+      // 拖动整列天，不显示卡片 overlay（列自身随指针移动）
+      setActiveItem(null);
+      return;
+    }
+    const day = findDay(activeId);
+    setActiveItem(day === null ? null : (columns[day].find((i) => i.id === activeId) ?? null));
   };
 
   // 跨天拖拽：拖动过程中把行程项挪到目标天，实现实时预览
   const handleDragOver = ({ active, over }: DragOverEvent) => {
     if (!over) return;
     const activeId = String(active.id);
+    if (activeId.startsWith("day-")) return; // 天重排由 SortableContext 变换处理
     const overId = String(over.id);
     const fromDay = findDay(activeId);
     const toDay = findDay(overId);
@@ -588,9 +644,32 @@ export default function ItineraryBoard({
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setActiveItem(null);
+    const activeId = String(active.id);
+    // 拖动整列天：提交新的天顺序（复用 onReorder 持久化 dayIndex 重排）
+    if (activeId.startsWith("day-")) {
+      if (!over) return;
+      const from = Number(activeId.slice(4));
+      const to = Number(String(over.id).slice(4));
+      if (
+        !Number.isInteger(from) ||
+        !Number.isInteger(to) ||
+        from === to ||
+        from < 0 ||
+        to < 0 ||
+        from >= columns.length ||
+        to >= columns.length
+      ) {
+        return;
+      }
+      const moved = arrayMove(columns, from, to);
+      setColumns(moved);
+      onReorder(
+        moved.flatMap((col, d) => col.map((item, idx) => ({ ...item, dayIndex: d, sortOrder: idx }))),
+      );
+      return;
+    }
     let next = columns;
     if (over) {
-      const activeId = String(active.id);
       const overId = String(over.id);
       const fromDay = findDay(activeId);
       const toDay = findDay(overId);
@@ -628,6 +707,16 @@ export default function ItineraryBoard({
   };
 
   const collisionDetection = useRef(makeCollisionDetection()).current;
+
+  // 菜单「左移/右移一天」：与拖动整列天等价，复用 onReorder 持久化
+  const moveDay = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= columns.length || to >= columns.length) return;
+    const moved = arrayMove(columns, from, to);
+    setColumns(moved);
+    onReorder(
+      moved.flatMap((col, d) => col.map((item, idx) => ({ ...item, dayIndex: d, sortOrder: idx }))),
+    );
+  };
 
   return (
     <DndContext
@@ -679,22 +768,25 @@ export default function ItineraryBoard({
         ref={scrollRef}
         style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8, alignItems: "stretch", scrollBehavior: "smooth" }}
       >
-        {columns.map((colItems, dayIndex) => (
-          <DayColumn
-            key={dayIndex}
-            dayIndex={dayIndex}
-            dayCount={dayCount}
-            date={startDate.add(dayIndex, "day")}
-            items={colItems}
-            weather={weather?.[dayIndex]}
-            readOnly={readOnly}
-            onAddItem={onAddItem}
-            onEditItem={onEditItem}
-            onDeleteItem={onDeleteItem}
-            onInsertDay={onInsertDay}
-            onRemoveDay={onRemoveDay}
-          />
-        ))}
+        <SortableContext items={columns.map((_, d) => `day-${d}`)} strategy={horizontalListSortingStrategy}>
+          {columns.map((colItems, dayIndex) => (
+            <DayColumn
+              key={dayIndex}
+              dayIndex={dayIndex}
+              dayCount={dayCount}
+              date={startDate.add(dayIndex, "day")}
+              items={colItems}
+              weather={weather?.[dayIndex]}
+              readOnly={readOnly}
+              onAddItem={onAddItem}
+              onEditItem={onEditItem}
+              onDeleteItem={onDeleteItem}
+              onInsertDay={onInsertDay}
+              onRemoveDay={onRemoveDay}
+              onMoveDay={moveDay}
+            />
+          ))}
+        </SortableContext>
         {!readOnly && (
           <div
             className="board-add-day"

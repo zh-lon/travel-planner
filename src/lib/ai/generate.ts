@@ -229,7 +229,15 @@ export function buildConfirmPrompt(
   return [
     {
       role: "system",
-      content: `你是旅行规划助手。用户要求调整行程。请根据指令内容自主判断：\n\n1. 用户要调整哪些天的行程。focusDays 是 0-based 的天索引数组（第 1 天 = 0，第 2 天 = 1…）。如果指令涉及所有天或无法确定具体天，返回空数组。\n2. 是否需要先向用户确认后再生成方案。可以提 1-3 个问题，每个问题给出 2-3 个选项。用户会逐个回答所有问题后再生成方案。\n\n无需确认时输出：{"need":false,"focusDays":[0,1]}\n需要确认时输出：{"need":true,"focusDays":[0,1],"questions":[{"question":"简短提问","options":[{"label":"选项","desc":"简述"}]}]}\n\n只输出 JSON。`,
+      content: `你是旅行规划助手。用户要求调整行程。请根据指令内容自主判断：
+
+1. 用户要调整哪些天的行程。focusDays 是 0-based 的天索引数组（第 1 天 = 0，第 2 天 = 1…）。如果指令涉及所有天或无法确定具体天，返回空数组。注意：如果用户要将某天的行程移动/放到/插入到另一天，这会影响源天到目标天之间的所有天，应返回空数组（涉及所有天）。
+2. 是否需要先向用户确认后再生成方案。可以提 1-3 个问题，每个问题给出 2-3 个选项。用户会逐个回答所有问题后再生成方案。
+
+无需确认时输出：{"need":false,"focusDays":[0,1]}
+需要确认时输出：{"need":true,"focusDays":[0,1],"questions":[{"question":"简短提问","options":[{"label":"选项","desc":"简述"}]}]}
+
+只输出 JSON。`,
     },
     {
       role: "user",
@@ -312,6 +320,48 @@ export function mergeFocusPlan(
     const focusIdx = sortedFocus.indexOf(d);
     if (focusIdx >= 0 && focusIdx < partialPlan.days.length) {
       days.push(partialPlan.days[focusIdx]);
+    } else {
+      days.push({
+        theme: null,
+        items: items
+          .filter((i) => i.dayIndex === d)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((i) => ({
+            type: i.type,
+            title: i.title,
+            startTime: i.startTime,
+            endTime: i.endTime,
+            placeName: i.placeName,
+            city: null,
+            estimatedCost: i.estimatedCost,
+            needBooking: i.needBooking,
+            notes: i.notes,
+            lng: i.lng,
+            lat: i.lat,
+            address: i.address,
+          })),
+      });
+    }
+  }
+  return { days };
+}
+
+// 安全兜底：AI 在完整输出模式（focusDays 为 null）下只输出了部分天数时，
+// 用原始行程项填充缺失的天，防止应用时丢失数据。
+// 与 mergeFocusPlan 不同：这里 AI 输出的天按顺序对应 dayIndex 0,1,2…，
+// 缺失的天用原始行程项补齐。
+export function mergePartialPlan(
+  partialPlan: AiPlan,
+  items: ItineraryItemT[],
+): AiPlan {
+  const itemsDayCount = items.length > 0
+    ? Math.max(...items.map((i) => i.dayIndex + 1))
+    : 1;
+  const dayCount = Math.max(itemsDayCount, partialPlan.days.length, 1);
+  const days: AiPlanDay[] = [];
+  for (let d = 0; d < dayCount; d++) {
+    if (d < partialPlan.days.length) {
+      days.push(partialPlan.days[d]);
     } else {
       days.push({
         theme: null,
@@ -534,9 +584,9 @@ export function sendStep(
   send({ type: "step", id, label, status, ...(detail ? { detail } : {}) });
 }
 
-// 行程方案生成核心：生成 + 校验重试 + 方案自检 + 坐标落地（不含 SSE 外壳，供调整接口与助手工作流复用）
+// 行程方案生成核心：生成 + 校验重试 + 坐标落地（不含 SSE 外壳，供调整接口与助手工作流复用）
 // 返回 null 表示失败（已通过 send 推送 error 事件）
-// resume：从失败步骤续跑——from=selfcheck 跳过生成直接自检；from=coords 跳过生成与自检直接匹配坐标
+// resume：从失败步骤续跑——from=coords 跳过生成直接匹配坐标
 export async function runPlanGeneration(
   send: SseSend,
   config: AiConfig,
@@ -544,11 +594,9 @@ export async function runPlanGeneration(
   input: { messages: ChatMessage[]; expectedDays: number; city: string },
   hooks?: {
     onValidated?: (plan: AiPlan) => void;
-    onSelfCheckFailed?: (detail: string) => void;
-    onSelfCheckDone?: (detail: string, plan: AiPlan) => void;
     onCoordsStart?: () => void;
   },
-  resume?: { from: "selfcheck" | "coords"; plan: AiPlan },
+  resume?: { from: "coords"; plan: AiPlan },
 ): Promise<AiPlan | null> {
   const convo: ChatMessage[] = [...input.messages];
   let plan: AiPlan | null = resume?.plan ?? null;
@@ -592,22 +640,6 @@ export async function runPlanGeneration(
     return null;
   }
   if (!resume) hooks?.onValidated?.(plan);
-
-  // 方案自检：审查顺路程度与时段合理性，不合格自动微调；自检失败直接终止工作流
-  if (resume?.from !== "coords") {
-    send({ type: "status", text: "正在自检方案（顺路程度/时段合理性）…" });
-    let checked: { plan: AiPlan; summary: string };
-    try {
-      checked = await selfCheckPlan(config, plan, input);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      hooks?.onSelfCheckFailed?.(msg);
-      send({ type: "error", message: `方案自检失败：${msg}` });
-      return null;
-    }
-    plan = checked.plan;
-    hooks?.onSelfCheckDone?.(checked.summary, plan);
-  }
 
   // 坐标落地：批量用高德 POI 搜索匹配（同名去重，串行控制 QPS）
   const webKey = (settings["amap.webKey"] || "").trim();

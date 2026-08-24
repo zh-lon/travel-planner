@@ -461,6 +461,13 @@ body {
   border-color: #5eead4;
 }
 
+.board-day-grip:hover {
+  color: #0d9488;
+}
+.board-day-grip:active {
+  cursor: grabbing;
+}
+
 .board-item-card {
   background: #fff;
   border: 1px solid #e8e8e8;

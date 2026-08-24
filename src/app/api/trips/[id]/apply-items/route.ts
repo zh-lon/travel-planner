@@ -51,6 +51,15 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
   }
 
+  // 安全检查：提交空 items 但数据库中已有行程项时拒绝执行，防止全量删除
+  const existingCount = await prisma.itineraryItem.count({ where: { tripId: id } });
+  if (body.items.length === 0 && existingCount > 0) {
+    return NextResponse.json(
+      { error: "提交的行程项为空但已有数据，已拒绝执行以保护现有行程" },
+      { status: 400 },
+    );
+  }
+
   // 支持随本次应用调整行程天数（AI 方案增减天时传入）
   const currentDayCount = dayCountOf(trip.startDate, trip.endDate);
   const daysReq = Number(body.days);

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { chat } from "@/lib/ai/client";
-import { buildAdjustFocusPrompt, buildAdjustPrompt, buildConfirmPrompt, mergeFocusPlan, parseConfirmResult, planStreamResponse } from "@/lib/ai/generate";
-import { detectFocusDays } from "@/lib/ai/diff";
+import { buildAdjustFocusPrompt, buildAdjustPrompt, buildConfirmPrompt, mergeFocusPlan, mergePartialPlan, parseConfirmResult, planStreamResponse } from "@/lib/ai/generate";
+import { detectFocusDays, isMoveDayInstruction } from "@/lib/ai/diff";
 import { requireTripEditByChild, requireUser } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 import { webSearch } from "@/lib/websearch";
@@ -92,8 +92,14 @@ export async function POST(request: Request) {
       return { messages, expectedDays: focusDays?.size ?? 0, city: trip.destination };
     },
     {
-      transformPlan: (plan) =>
-        focusDays ? mergeFocusPlan(plan, items, focusDays) : plan,
+      // 安全兜底：focusDays 为 null 但 AI 只输出了部分天数时，用原始行程项填充缺失天
+      transformPlan: (plan) => {
+        if (focusDays) return mergeFocusPlan(plan, items, focusDays);
+        const itemsDayCount = items.length > 0
+          ? Math.max(...items.map((i) => i.dayIndex + 1))
+          : 0;
+        return plan.days.length < itemsDayCount ? mergePartialPlan(plan, items) : plan;
+      },
       preCheck: confirmAnswer
         ? undefined
         : async (send, config) => {
@@ -106,10 +112,14 @@ export async function POST(request: Request) {
                 30000,
               );
               const confirmResult = parseConfirmResult(confirmRaw);
-              // 从 AI 结果获取 focusDays
-              focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
-                ? new Set(confirmResult.focusDays)
-                : detectFocusDays(fullInstruction);
+              // 移动天操作需要全量输出，覆盖 AI 的 focusDays 判断
+              if (isMoveDayInstruction(instruction)) {
+                focusDays = null;
+              } else {
+                focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
+                  ? new Set(confirmResult.focusDays)
+                  : detectFocusDays(fullInstruction);
+              }
               if (confirmResult.need && confirmResult.questions) {
                 send({ type: "step", id: "confirm", label: "分析调整意图", status: "done", detail: "需要用户确认" });
                 send({

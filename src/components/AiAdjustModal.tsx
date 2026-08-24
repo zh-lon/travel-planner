@@ -52,7 +52,9 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
 
   // 方案到达时默认全选所有变更
   useEffect(() => {
-    setSelected(new Set(entries.filter((e) => e.kind !== "unchanged").map((e) => e.key)));
+    // 默认勾选 added 和 modified，不勾选 removed ——
+    // 防止用户不细看就全量应用，导致非意图的大量删除
+    setSelected(new Set(entries.filter((e) => e.kind === "added" || e.kind === "modified").map((e) => e.key)));
   }, [entries]);
 
   useEffect(() => {
@@ -91,7 +93,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
           else if (event.type === "status" && event.text) setStatus(event.text);
           else if (event.type === "result" && event.plan) {
             setPlan(event.plan as AiPlan);
-            setAiFocusDays(Array.isArray(event.focusDays) ? event.focusDays : null);
+            // 空数组视为 null（AI 返回 [] 表示"所有天"，不做天级别过滤）
+            setAiFocusDays(Array.isArray(event.focusDays) && event.focusDays.length > 0 ? event.focusDays : null);
             setPhase("preview");
           } else if (event.type === "confirm") {
             setConfirmData({
@@ -141,6 +144,13 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
 
   const handleApply = async () => {
     if (!plan || selectedCount === 0) return;
+    // 安全检查：entries 必须包含足够原始项，防止 diff/revert 逻辑异常导致全量删除
+    const oldItemCount = trip.items.length;
+    const entriesWithOld = entries.filter((e) => e.oldItem).length;
+    if (oldItemCount > 0 && entriesWithOld === 0) {
+      message.error("对比数据异常（原始项全部丢失），已阻止应用以保护数据，请重新生成方案");
+      return;
+    }
     setApplying(true);
     try {
       const { items, days } = composeApplyItems(entries, selected, plan.days.length);

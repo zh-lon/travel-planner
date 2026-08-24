@@ -195,7 +195,7 @@ function detectAdjustFields(instruction: string): Set<string> {
   if (/费用|预算|多少钱|价格|花费|成本|贵|便宜/.test(text)) fields.add("cost");
   if (/备注|说明|提示|推荐理由|理由/.test(text)) fields.add("notes");
   if (/预约|预订|购票|门票/.test(text)) fields.add("booking");
-  if (/顺序|前后|先.*后|调换|交换|互换|对调|对换|换.*位置|换到.*天|移到.*天|搬到.*天/.test(text)) fields.add("order");
+  if (/顺序|前后|先.*后|调换|交换|互换|对调|对换|换.*位置|换到.*天|移到.*天|搬到.*天|放到.*天|插入到.*天|调到.*天|挪到.*天|往后移|往前移|往前挪|往后挪/.test(text)) fields.add("order");
   if (/类型|改成.*(交通|餐饮|住宿|景点|购物)/.test(text)) fields.add("type");
   if (/加.*天|减.*天|增.*天|压缩|延长|缩短|多一天|少一天|拆成|拆分|合并/.test(text)) fields.add("days");
   // 调整顺序/天数通常涉及时间变更，联动允许 time
@@ -205,12 +205,21 @@ function detectAdjustFields(instruction: string): Set<string> {
   return fields;
 }
 
+// 检测是否为"移动天"操作：将某天内容移到/放到/插入到另一天，
+// 影响源天到目标天之间的所有天，需要 AI 输出完整行程
+export function isMoveDayInstruction(instruction: string): boolean {
+  return /移到.*天|放到.*天|插入到.*天|搬到.*天|调到.*天|挪到.*天|往后移|往前移|往前挪|往后挪|移到前面|移到后面/.test(instruction);
+}
+
 // 从指令中识别用户指定的调整天数（返回 0-based 天索引集合）
 export function detectFocusDays(instruction: string): Set<number> | null {
   // "每天"/"所有天"/"各天" 表示用户想改所有天，不做天级别过滤
   if (/每天|每一天|所有天|各天|全部天/.test(instruction)) return null;
   // 增减/拆分天数意图需要 AI 输出完整行程，不适合部分天输出模式
   if (/加.*天|减.*天|增.*天|压缩|延长|缩短|多一天|少一天|拆成|拆分|合并/.test(instruction)) return null;
+  // 移动天意图：将某天内容移到/放到/插入到另一天，影响源天到目标天之间的所有天，
+  // 部分天输出模式无法正确处理，需要 AI 输出完整行程
+  if (isMoveDayInstruction(instruction)) return null;
   // 先把中文数字统一转为阿拉伯数字
   const text = instruction
     .replace(/十一/g, "11").replace(/十二/g, "12").replace(/十三/g, "13")
@@ -255,7 +264,9 @@ export function revertNonIntentFields(
   focusDaysOverride?: Set<number> | null,
 ): DiffEntry[] {
   const allowed = detectAdjustFields(instruction);
-  const focusDays = focusDaysOverride !== undefined ? focusDaysOverride : detectFocusDays(instruction);
+  // 空 Set 视为 null（AI 返回 focusDays: [] 表示"所有天"，不应做天级别过滤）
+  const rawFocusDays = focusDaysOverride !== undefined ? focusDaysOverride : detectFocusDays(instruction);
+  const focusDays = rawFocusDays && rawFocusDays.size > 0 ? rawFocusDays : null;
   // 无天级别过滤且无字段级别过滤时，直接返回
   if (allowed.has("all") && !focusDays) return entries;
   const allowDayChange = allowed.has("order") || allowed.has("days");
@@ -266,10 +277,14 @@ export function revertNonIntentFields(
     if (focusDays) {
       const itemDay = e.oldItem ? (allowDayChange ? e.dayIndex : e.oldItem.dayIndex) : e.dayIndex;
       if (!focusDays.has(itemDay)) {
-        if (e.kind === "modified" || e.kind === "removed") {
-          result.push({ ...e, kind: "unchanged", changes: [] });
+        if (e.kind === "added") {
+          // added 项不在关注天：跳过（不加入结果，不会选中也不会应用）
+          continue;
         }
-        // added 项不在关注天：跳过（不加入结果，不会选中也不会应用）
+        // modified/removed/unchanged 项保留——
+        // modified 和 removed 回退为 unchanged（不应用 AI 的擅自修改/删除）；
+        // unchanged 项必须原样保留，否则 composeApplyItems 会缺失原始项导致数据丢失
+        result.push(e.kind === "unchanged" ? e : { ...e, kind: "unchanged", changes: [] });
         continue;
       }
     }
@@ -331,7 +346,10 @@ export function composeApplyItems(
 ): { items: ApplyItemPayload[]; days: number } {
   let dayCount = Math.max(1, planDays);
   for (const e of entries) {
-    if ((e.kind === "removed" || e.kind === "modified") && !selected.has(e.key) && e.oldItem) {
+    // unchanged 条目必须参与 dayCount 计算：当 plan 天数少于原始行程时
+    //（如 AI 只输出了部分天），unchanged 条目的 dayIndex 可能超出 planDays，
+    // 如果不纳入计算会导致行程天数被错误缩短、其他天数据丢失
+    if (e.oldItem && (e.kind === "unchanged" || ((e.kind === "removed" || e.kind === "modified") && !selected.has(e.key)))) {
       dayCount = Math.max(dayCount, e.oldItem.dayIndex + 1);
     }
   }

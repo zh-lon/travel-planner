@@ -8,12 +8,13 @@ import {
   buildChatPrompt,
   buildConfirmPrompt,
   mergeFocusPlan,
+  mergePartialPlan,
   parseConfirmResult,
   runPlanGeneration,
   sendStep,
   type SseSend,
 } from "@/lib/ai/generate";
-import { detectFocusDays } from "@/lib/ai/diff";
+import { detectFocusDays, isMoveDayInstruction } from "@/lib/ai/diff";
 import { getWorkflow, newWorkflowId, setWorkflow, type WorkflowState } from "@/lib/ai/workflow";
 import { requireTripEditByChild, requireUser } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
   const items = tripDetail.items as ItineraryItemT[];
 
   // 工作流式编排：逐步执行并通过 step 事件推送进度
-  // 调整分支：理解问题 →（联网搜索）→ 生成方案 → 方案自检 → 坐标落地 → 完成
+  // 调整分支：理解问题 →（联网搜索）→ 生成方案 → 坐标落地 → 完成
   // 对话分支：理解问题 →（联网搜索）→ AI 回答 → 完成
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -132,14 +133,13 @@ export async function POST(request: Request) {
         const reqWorkflowId = typeof body!.workflowId === "string" ? body!.workflowId : "";
         const resumeFrom = typeof body!.resumeFrom === "string" ? body!.resumeFrom : "";
         const cached = reqWorkflowId ? getWorkflow(reqWorkflowId) : null;
-        let from: "intent" | "search" | "generate" | "selfcheck" | "coords" | "reply" | null = null;
+        let from: "intent" | "search" | "generate" | "coords" | "reply" | null = null;
         if (cached) {
           if (resumeFrom === "intent") from = "intent";
           else if (resumeFrom === "search") from = cached.isAdjust !== undefined ? "search" : null;
           else if (resumeFrom === "generate") from = cached.isAdjust === true && cached.messages ? "generate" : null;
-          else if (resumeFrom === "selfcheck") from = cached.isAdjust === true && cached.generatedPlan ? "selfcheck" : null;
           else if (resumeFrom === "coords") {
-            from = cached.isAdjust === true && (cached.checkedPlan || cached.generatedPlan) ? "coords" : null;
+            from = cached.isAdjust === true && cached.generatedPlan ? "coords" : null;
           } else if (resumeFrom === "reply") from = cached.isAdjust === false ? "reply" : null;
         }
         const workflowId = from ? reqWorkflowId : newWorkflowId();
@@ -217,10 +217,14 @@ export async function POST(request: Request) {
                 30000,
               );
               const confirmResult = parseConfirmResult(confirmRaw);
-              // 从 AI 结果获取 focusDays
-              focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
-                ? new Set(confirmResult.focusDays)
-                : detectFocusDays(fullInstruction);
+              // 移动天操作需要全量输出，覆盖 AI 的 focusDays 判断
+              if (isMoveDayInstruction(message)) {
+                focusDays = null;
+              } else {
+                focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
+                  ? new Set(confirmResult.focusDays)
+                  : detectFocusDays(fullInstruction);
+              }
               if (confirmResult.need && confirmResult.questions) {
                 sendStep(send, "confirm", "分析调整意图", "done", "需要用户确认");
                 send({
@@ -246,22 +250,16 @@ export async function POST(request: Request) {
           }
           state.focusDays = focusDays ? [...focusDays] : [];
 
-          // 步骤 3a：生成调整方案（含校验重试、方案自检与坐标落地）
-          if (from === "selfcheck") {
+          // 步骤 3a：生成调整方案（含校验重试与坐标落地）
+          if (from === "coords") {
             sendStep(send, "generate", "生成调整方案", "done", "使用上次已生成的方案");
-            sendStep(send, "selfcheck", "方案自检", "start");
-          } else if (from === "coords") {
-            sendStep(send, "generate", "生成调整方案", "done", "使用上次已生成的方案");
-            sendStep(send, "selfcheck", "方案自检", "done", "使用上次自检结果");
           } else {
             sendStep(send, "generate", "生成调整方案", "start");
           }
-          let selfCheckDone = false;
-          let selfCheckFailed = false;
           let coordsStarted = false;
           // 续跑自生成之后的步骤时复用缓存的提示词；否则重新构建
           let messages: ChatMessage[];
-          if (state.messages && (from === "generate" || from === "selfcheck" || from === "coords")) {
+          if (state.messages && (from === "generate" || from === "coords")) {
             messages = state.messages;
           } else {
             messages = focusDays
@@ -284,38 +282,37 @@ export async function POST(request: Request) {
               onValidated: (p) => {
                 state.generatedPlan = p;
                 sendStep(send, "generate", "生成调整方案", "done", "方案已通过校验");
-                sendStep(send, "selfcheck", "方案自检", "start");
-              },
-              onSelfCheckFailed: (detail) => {
-                selfCheckFailed = true;
-                sendStep(send, "selfcheck", "方案自检", "error", detail);
-              },
-              onSelfCheckDone: (detail, p) => {
-                selfCheckDone = true;
-                state.checkedPlan = p;
-                sendStep(send, "selfcheck", "方案自检", "done", detail);
               },
               onCoordsStart: () => {
                 coordsStarted = true;
                 sendStep(send, "coords", "匹配地点坐标", "start");
               },
             },
-            from === "selfcheck"
-              ? { from: "selfcheck", plan: state.generatedPlan! }
-              : from === "coords"
-                ? { from: "coords", plan: state.checkedPlan ?? state.generatedPlan! }
-                : undefined,
+            from === "coords"
+              ? { from: "coords", plan: state.generatedPlan! }
+              : undefined,
           );
           if (!plan) {
             // runPlanGeneration 已推送 error 事件；按实际失败环节标记步骤
             if (coordsStarted) sendStep(send, "coords", "匹配地点坐标", "error");
-            else if (!selfCheckFailed) sendStep(send, "generate", "生成调整方案", "error");
+            else sendStep(send, "generate", "生成调整方案", "error");
             return;
           }
-          if (!selfCheckDone) sendStep(send, "selfcheck", "方案自检", "done", "已跳过");
           if (coordsStarted) sendStep(send, "coords", "匹配地点坐标", "done");
           sendStep(send, "complete", "完成", "done", "调整方案已就绪，请确认后应用");
-          const finalPlan = focusDays ? mergeFocusPlan(plan, items, focusDays) : plan;
+          // 安全兜底：focusDays 为 null（完整输出模式）但 AI 只输出了部分天数时，
+          // 用原始行程项填充缺失的天，防止应用时丢失其他天的数据
+          let finalPlan: typeof plan;
+          if (focusDays) {
+            finalPlan = mergeFocusPlan(plan, items, focusDays);
+          } else {
+            const itemsDayCount = items.length > 0
+              ? Math.max(...items.map((i) => i.dayIndex + 1))
+              : 0;
+            finalPlan = plan.days.length < itemsDayCount
+              ? mergePartialPlan(plan, items)
+              : plan;
+          }
           send({ type: "result", plan: finalPlan, focusDays: focusDays ? [...focusDays] : [] });
           return;
         }
