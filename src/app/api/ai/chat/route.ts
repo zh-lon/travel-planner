@@ -333,7 +333,7 @@ export async function POST(request: Request) {
           const msg =
             err instanceof Error
               ? err.name === "AbortError"
-                ? "AI 调用超时（5 分钟）"
+                ? "AI 调用超时（10 分钟无响应）"
                 : err.message
               : String(err);
           sendStep(send, "reply", "AI 正在回答", "error");

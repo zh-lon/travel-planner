@@ -61,6 +61,7 @@ function splitSystem(messages: ChatMessage[]): {
 }
 
 // 非流式对话，返回完整文本
+// timeoutMs：请求总时长上限；传 0 或负数表示不设超时（仅在确认上游不会被挂起时使用）
 export async function chat(
   config: AiConfig,
   messages: ChatMessage[],
@@ -68,7 +69,10 @@ export async function chat(
   timeoutMs = 60000,
 ): Promise<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  }
   try {
     if (config.protocol === "anthropic") {
       const { system, rest } = splitSystem(messages);
@@ -124,20 +128,27 @@ export async function chat(
     });
     throw err;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 
 // 流式对话：onDelta 收到所有可展示的增量（含思考过程），返回值只包含正文内容
+// timeoutMs 为"空闲超时"：每次收到上游数据块即重置计时器，仅当完全无数据超过该时长才中止连接；
+// 传 0 或负数表示不设超时。默认 10 分钟，兼顾首 token 前的排队等待与长时间输出
 export async function chatStream(
   config: AiConfig,
   messages: ChatMessage[],
   onDelta: (text: string) => void,
   maxTokens = 8000,
-  timeoutMs = 300000,
+  timeoutMs = 600000,
 ): Promise<string> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const resetIdleTimer = () => {
+    if (timer) clearTimeout(timer);
+    if (timeoutMs > 0) timer = setTimeout(() => controller.abort(), timeoutMs);
+  };
+  resetIdleTimer();
   let full = "";
 
   const consumeSse = async (res: Response, onData: (payload: string) => void) => {
@@ -149,6 +160,7 @@ export async function chatStream(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (value && value.byteLength > 0) resetIdleTimer();
       buf += decoder.decode(value, { stream: true });
       const lines = buf.split("\n");
       buf = lines.pop() ?? "";
@@ -231,7 +243,7 @@ export async function chatStream(
     });
     return full;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 

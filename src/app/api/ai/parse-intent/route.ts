@@ -180,7 +180,7 @@ JSON 结构：
           inputTextPreview: text.slice(0, 200),
         });
         const msg = isTimeout
-          ? "AI 解析超时（180秒），请重试或直接填写表单"
+          ? "AI 解析超时（3 分钟无响应），请重试或直接填写表单"
           : err instanceof Error
             ? err.message
             : String(err);

@@ -100,7 +100,12 @@ export async function POST(request: Request) {
             city: trip.destination,
           });
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg =
+            err instanceof Error
+              ? err.name === "AbortError"
+                ? "方案自检超时（10 分钟无响应）"
+                : err.message
+              : String(err);
           sendStep(send, "selfcheck", "方案自检", "error", msg);
           send({ type: "error", message: `方案自检失败：${msg}` });
           return;

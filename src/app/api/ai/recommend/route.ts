@@ -112,7 +112,7 @@ export async function POST(request: Request) {
           try {
             fullText = await chatStream(config, messages, (delta) => {
               send({ type: "delta", text: delta });
-            }, 8192, 300000);
+            }, 8192, 600000);
           } catch (err) {
             send({
               type: "error",
@@ -216,7 +216,7 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     const msg = err instanceof Error && err.name === "AbortError"
-      ? "AI 推荐超时（300秒），请重试"
+      ? "AI 推荐超时，请重试"
       : err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 500 });
   }

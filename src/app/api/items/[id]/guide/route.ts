@@ -103,7 +103,7 @@ export async function POST(request: Request, { params }: Params) {
           const msg =
             err instanceof Error
               ? err.name === "AbortError"
-                ? "AI 调用超时（180秒）"
+                ? "AI 调用超时（3 分钟无响应）"
                 : err.message
               : String(err);
           send({ type: "error", message: `攻略生成失败：${msg}` });

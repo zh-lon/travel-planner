@@ -71,15 +71,15 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_http_version 1.1;
         proxy_buffering off;          # AI 流式输出需要关闭缓冲
-        # AI 请求最长可达 300 秒，Nginx 默认 60 秒会返回 504
+        # AI 流式调用为空闲超时（默认 10 分钟无数据才中断），心跳 15 秒保活；Nginx 默认 60 秒会返回 504
         proxy_connect_timeout 30s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
     }
 }
 ```
 
-> **重要**：`proxy_read_timeout` 必须设为 300 秒以上，否则 AI 生成行程等耗时操作会触发 504 网关超时。如果使用 Cloudflare 免费版，其边缘超时为 100 秒，需将 AI 服务尽量选响应快的模型，或升级到 Pro 版（支持 300 秒）。
+> **重要**：`proxy_read_timeout` 必须设得足够大，否则 AI 生成行程等耗时操作会触发 504 网关超时。流式接口自带 15 秒心跳保活，空闲超时最长 10 分钟，建议 `proxy_read_timeout`/`proxy_send_timeout` 设为 600 秒以上。如果使用 Cloudflare 免费版，其边缘超时为 100 秒，需将 AI 服务尽量选响应快的模型，或升级到 Pro 版（支持 300 秒）。
 
 ```bash
 sudo certbot --nginx -d travel.example.com   # 自动配置 HTTPS

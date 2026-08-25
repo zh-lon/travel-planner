@@ -447,12 +447,15 @@ body {
 .board-day-col {
   width: 280px;
   flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
   background: #f6f9fa;
   border: 1px solid #e8f0f0;
   border-radius: 12px;
   padding: 14px;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   transition: background 0.2s, border-color 0.2s;
 }
 

@@ -121,11 +121,11 @@ node scripts/query-trip.mjs      # 查询行程数据
 
 ### 1. AI 接口全部流式化
 
-所有 AI 调用统一采用 SSE 流式输出（`chatStream` + `ReadableStream` 服务端模式），客户端通过 `postSse()` 接收事件流。**非流式 `chat()` 仅用于秒级小输出场景**（意图识别 `maxTokens=8`、连通性测试 `maxTokens=256`）。长耗时大输出（方案生成、方案自检、AI 推荐）必须走流式，超时 300 秒。
+所有 AI 调用统一采用 SSE 流式输出（`chatStream` + `ReadableStream` 服务端模式），客户端通过 `postSse()` 接收事件流。**非流式 `chat()` 仅用于秒级小输出场景**（意图识别 `maxTokens=8`、连通性测试 `maxTokens=256`）。长耗时大输出（方案生成、方案自检、AI 推荐）必须走流式，超时采用**空闲超时**语义：每次收到上游数据块即重置计时器，默认 10 分钟无数据才中断（传 `timeoutMs=0` 可禁用超时）；轻量流式接口（意图解析、地点攻略）保持 3 分钟空闲超时。
 
 ### 2. SSE 心跳保活
 
-所有 SSE 流式接口必须配置 **15 秒心跳**（`: heartbeat\n\n`），覆盖首 token 前（TTFT）、地理编码等无数据阶段，防止被反向代理（Nginx）中断。部署时 `proxy_read_timeout` 和 `proxy_send_timeout` 至少设为 300 秒。注意 Cloudflare 免费版有 100 秒边缘超时限制。
+所有 SSE 流式接口必须配置 **15 秒心跳**（`: heartbeat\n\n`），覆盖首 token 前（TTFT）、地理编码等无数据阶段，防止被反向代理（Nginx）中断。部署时 `proxy_read_timeout` 和 `proxy_send_timeout` 至少设为 600 秒（AI 流式空闲超时最长 10 分钟）。注意 Cloudflare 免费版有 100 秒边缘超时限制。
 
 ### 3. JSON 截断修复
 

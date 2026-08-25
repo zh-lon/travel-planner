@@ -373,7 +373,7 @@ function DayColumn({
         opacity: isDragging ? 0.5 : 1,
       }}
     >
-      <div style={{ marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 4 }}>
+      <div style={{ marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 4, flexShrink: 0 }}>
         {!readOnly && (
           <span
             {...attributes}
@@ -439,7 +439,7 @@ function DayColumn({
       </div>
       <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
         <div
-          style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 48 }}
+          style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", paddingRight: 4 }}
         >
           {items.map((item, idx) => (
             <div key={item.id}>
@@ -510,19 +510,19 @@ function DayColumn({
               暂无安排，可拖入或点下方添加
             </div>
           )}
-          {!readOnly && (
-            <Button
-              type="dashed"
-              block
-              icon={<PlusOutlined />}
-              style={{ marginTop: items.length > 0 ? 6 : 0, borderColor: "#dce4e4", color: "#8c8c8c", borderRadius: 8 }}
-              onClick={() => onAddItem(dayIndex)}
-            >
-              添加行程项
-            </Button>
-          )}
         </div>
       </SortableContext>
+      {!readOnly && (
+        <Button
+          type="dashed"
+          block
+          icon={<PlusOutlined />}
+          style={{ marginTop: items.length > 0 ? 6 : 0, flexShrink: 0, borderColor: "#dce4e4", color: "#8c8c8c", borderRadius: 8 }}
+          onClick={() => onAddItem(dayIndex)}
+        >
+          添加行程项
+        </Button>
+      )}
     </div>
   );
 }
@@ -727,8 +727,9 @@ export default function ItineraryBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
       {/* 日导航栏 */}
-      <div className="board-day-nav" style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 10, padding: "6px 0", overflow: "hidden" }}>
+      <div className="board-day-nav" style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 10, padding: "6px 0", overflow: "hidden", flexShrink: 0 }}>
         <Button
           type="text"
           size="small"
@@ -766,7 +767,7 @@ export default function ItineraryBoard({
 
       <div
         ref={scrollRef}
-        style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8, alignItems: "stretch", scrollBehavior: "smooth" }}
+        style={{ flex: 1, minHeight: 0, display: "flex", gap: 12, overflowX: "auto", overflowY: "hidden", paddingBottom: 8, alignItems: "stretch", scrollBehavior: "smooth" }}
       >
         <SortableContext items={columns.map((_, d) => `day-${d}`)} strategy={horizontalListSortingStrategy}>
           {columns.map((colItems, dayIndex) => (
@@ -796,6 +797,7 @@ export default function ItineraryBoard({
             <span style={{ writingMode: "vertical-lr", letterSpacing: 4, fontSize: 12 }}>添加一天</span>
           </div>
         )}
+      </div>
       </div>
       <DragOverlay>
         {activeItem ? (

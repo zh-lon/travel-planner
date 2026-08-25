@@ -633,7 +633,7 @@ export async function runPlanGeneration(
         const msg =
           err instanceof Error
             ? err.name === "AbortError"
-              ? "AI 调用超时（5 分钟）"
+              ? "AI 调用超时（10 分钟无响应）"
               : err.message
             : String(err);
         send({ type: "error", message: `AI 调用失败：${msg}` });
@@ -721,7 +721,7 @@ export async function selfCheckPlan(
       // 自检输出不需要展示，静默收集即可
     },
     config.maxTokens ?? 8000,
-    300000,
+    600000,
   );
   const result = parsePlan(raw, input.expectedDays, true);
   if ("plan" in result) {
