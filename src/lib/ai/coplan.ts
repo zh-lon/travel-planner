@@ -2,7 +2,7 @@
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
 import { z } from "zod";
-import { ITEM_JSON_SHAPE } from "./generate";
+import { ITEM_JSON_SHAPE_NO_STAY } from "./generate";
 import { parseJsonLoose, looseDaySchema, normalizeDay } from "./schema";
 import type { ChatMessage } from "./client";
 import type { AiPlanDay, AiPlanItem } from "@/types";
@@ -42,8 +42,9 @@ ${confirmed.length ? `已确认的天（只读上下文，不要改动，规划�
 工作方式：根据用户的想法为当前这一天给出行程提议（4~7 个行程项，时间从早到晚互不重叠、动线合理），用户会勾选保留并可能提出修改意见；用户没有明确想法时你也要主动给出提议。若确实需要先向用户确认关键信息，可以只回复问题、不给提议（day 填 null）。
 如果目的地含多个城市，规划当天行程时注意是否涉及城市间交通（如当天需从昆明到大理，应安排城际交通行程项，type 为 TRANSPORT，title 如「昆明→大理 高铁」）；theme 体现当天所在城市。
 你只输出一个 JSON 对象，不要任何解释文字，不要 Markdown 代码块，结构：
-{"reply":"给用户的简短聊天回复（1~3 句，说明思路或提问）","day":{"theme":"当天主题","items":[${ITEM_JSON_SHAPE}]}}
-无提议时 day 为 null。placeName 用规范 POI 名称，交通/自由活动留空字符串；estimatedCost 为人均预估费用（元）；全部使用中文。`;
+{"reply":"给用户的简短聊天回复（1~3 句，说明思路或提问）","day":{"theme":"当天主题","items":[${ITEM_JSON_SHAPE_NO_STAY}]}}
+无提议时 day 为 null。placeName 用规范 POI 名称，交通/自由活动留空字符串；estimatedCost 为人均预估费用（元）；全部使用中文。
+重要：不要生成住宿（HOTEL）和餐饮（FOOD）类行程项。用户会自行安排住宿和餐饮，行程中只需安排景点游览、交通和购物等活动。`;
   return [
     { role: "system", content: system },
     ...p.messages.map((m) => ({ role: m.role, content: m.content }) as ChatMessage),

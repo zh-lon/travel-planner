@@ -205,6 +205,14 @@ function detectAdjustFields(instruction: string): Set<string> {
   return fields;
 }
 
+// 检测用户指令是否明确涉及住宿或餐饮
+function detectStayIntent(instruction: string): { hotel: boolean; food: boolean } {
+  const text = instruction;
+  const hotel = /住宿|酒店|民宿|宾馆|旅馆|入住|退房|换住|客栈|旅舍/.test(text);
+  const food = /餐饮|吃饭|餐厅|美食|饭店|用餐|早餐|午餐|晚餐|早饭|午饭|晚饭|宵夜|小吃|觅食|饭点|就餐|聚餐/.test(text);
+  return { hotel, food };
+}
+
 // 检测是否为"移动天"操作：将某天内容移到/放到/插入到另一天，
 // 影响源天到目标天之间的所有天，需要 AI 输出完整行程
 export function isMoveDayInstruction(instruction: string): boolean {
@@ -267,8 +275,11 @@ export function revertNonIntentFields(
   // 空 Set 视为 null（AI 返回 focusDays: [] 表示"所有天"，不应做天级别过滤）
   const rawFocusDays = focusDaysOverride !== undefined ? focusDaysOverride : detectFocusDays(instruction);
   const focusDays = rawFocusDays && rawFocusDays.size > 0 ? rawFocusDays : null;
-  // 无天级别过滤且无字段级别过滤时，直接返回
-  if (allowed.has("all") && !focusDays) return entries;
+  // 住宿/餐饮意图检测：用户未明确提及时不增删改此类行程项
+  const stayIntent = detectStayIntent(instruction);
+  const hasStayProtection = !stayIntent.hotel || !stayIntent.food;
+  // 无天级别过滤、无字段级别过滤、无住宿餐饮保护时，直接返回
+  if (allowed.has("all") && !focusDays && !hasStayProtection) return entries;
   const allowDayChange = allowed.has("order") || allowed.has("days");
   const doFieldRevert = !allowed.has("all");
   const result: DiffEntry[] = [];
@@ -286,6 +297,31 @@ export function revertNonIntentFields(
         // unchanged 项必须原样保留，否则 composeApplyItems 会缺失原始项导致数据丢失
         result.push(e.kind === "unchanged" ? e : { ...e, kind: "unchanged", changes: [] });
         continue;
+      }
+    }
+    // 住宿/餐饮保护：除非用户明确提及住宿或餐饮，否则不增删改 HOTEL/FOOD 项
+    if (hasStayProtection) {
+      const oldType = e.oldItem?.type ?? "";
+      const newType = e.newItem?.type ?? "";
+      const isHotelRelated = oldType === "HOTEL" || newType === "HOTEL";
+      const isFoodRelated = oldType === "FOOD" || newType === "FOOD";
+      const protectHotel = isHotelRelated && !stayIntent.hotel;
+      const protectFood = isFoodRelated && !stayIntent.food;
+      if (protectHotel || protectFood) {
+        if (e.kind === "added") {
+          // AI 新增的住宿/餐饮项：跳过
+          continue;
+        }
+        if (e.kind === "removed") {
+          // AI 删除的住宿/餐饮项：回退为 unchanged
+          result.push({ ...e, kind: "unchanged", changes: [] });
+          continue;
+        }
+        if (e.kind === "modified" && e.oldItem) {
+          // AI 修改的住宿/餐饮项：回退为 unchanged，恢复原始天数
+          result.push({ ...e, kind: "unchanged", dayIndex: e.oldItem.dayIndex, changes: [] });
+          continue;
+        }
       }
     }
     // 字段级回退（仅有具体字段意图时）
