@@ -335,7 +335,7 @@ export default function AiPlanWizard({ open, onCancel, onCreated }: Props) {
             value={intentText}
             onChange={(e) => setIntentText(e.target.value)}
             placeholder="如：下周想去成都玩3天，2个人，预算舒适，想看大熊猫和宽窄巷子，带个小孩"
-            maxLength={500}
+            maxLength={10000}
             onPressEnter={(e) => {
               if (e.ctrlKey || e.metaKey) handleParseIntent();
             }}

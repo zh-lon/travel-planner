@@ -650,7 +650,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="问点什么，或直接说想怎么调整行程…"
             autoSize={{ minRows: 1, maxRows: 3 }}
-            maxLength={500}
+            maxLength={10000}
             onPressEnter={(e) => {
               if (!e.shiftKey) {
                 e.preventDefault();

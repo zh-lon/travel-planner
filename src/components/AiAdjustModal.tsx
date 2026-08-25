@@ -200,7 +200,7 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             placeholder={`告诉 AI 你想怎么调整，例如：\n· 第 2 天太赶了，减少一个景点，节奏放慢\n· 把美食安排换成本地老字号\n· 行程加一天，加的这天去周边古镇\n· 压缩成两天的精华版`}
-            maxLength={500}
+            maxLength={10000}
           />
           <Button type="primary" block icon={<RobotOutlined />} onClick={() => handleGenerate()}>
             生成调整方案
