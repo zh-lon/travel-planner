@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     focusDays = bodyFocusDays.length > 0 ? new Set(bodyFocusDays) : null;
   } else {
     // 初始请求或无前端回传：先用正则兑底，preCheck 中可能被 AI 结果覆盖
-    focusDays = detectFocusDays(fullInstruction);
+    focusDays = detectFocusDays(fullInstruction, tripDetail.startDate);
   }
   return planStreamResponse(
     async () => {
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
               } else {
                 focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
                   ? new Set(confirmResult.focusDays)
-                  : detectFocusDays(fullInstruction);
+                  : detectFocusDays(fullInstruction, tripDetail.startDate);
               }
               if (confirmResult.need && confirmResult.questions) {
                 send({ type: "step", id: "confirm", label: "分析调整意图", status: "done", detail: "需要用户确认" });

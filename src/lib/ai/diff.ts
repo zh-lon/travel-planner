@@ -198,7 +198,11 @@ function detectAdjustFields(instruction: string): Set<string> {
   if (/顺序|前后|先.*后|调换|交换|互换|对调|对换|换.*位置|换到.*天|移到.*天|搬到.*天|放到.*天|插入到.*天|调到.*天|挪到.*天|往后移|往前移|往前挪|往后挪/.test(text)) fields.add("order");
   if (/类型|改成.*(交通|餐饮|住宿|景点|购物)/.test(text)) fields.add("type");
   if (/加.*天|减.*天|增.*天|压缩|延长|缩短|多一天|少一天|拆成|拆分|合并/.test(text)) fields.add("days");
-  // 调整顺序/天数通常涉及时间变更，联动允许 time
+  // 删除/移除项：涉及顺序变化，联动允许 order 和 time
+  if (/删除|去掉|移除|不要|取消|删掉|拿掉|去除/.test(text)) {
+    fields.add("order");
+  }
+  // 调整顺序/天数/删除项通常涉及时间变更，联动允许 time
   if (fields.has("order") || fields.has("days")) fields.add("time");
   // 未识别到明确意图时，不做回退（允许所有变更）
   if (fields.size === 0) fields.add("all");
@@ -220,7 +224,8 @@ export function isMoveDayInstruction(instruction: string): boolean {
 }
 
 // 从指令中识别用户指定的调整天数（返回 0-based 天索引集合）
-export function detectFocusDays(instruction: string): Set<number> | null {
+// startDate 可选：传入后可识别"10月4号"等日期格式并映射为天索引
+export function detectFocusDays(instruction: string, startDate?: string): Set<number> | null {
   // "每天"/"所有天"/"各天" 表示用户想改所有天，不做天级别过滤
   if (/每天|每一天|所有天|各天|全部天/.test(instruction)) return null;
   // 增减/拆分天数意图需要 AI 输出完整行程，不适合部分天输出模式
@@ -261,6 +266,24 @@ export function detectFocusDays(instruction: string): Set<number> | null {
   if (prefixMatch) {
     const n = +prefixMatch[1];
     for (let d = 0; d < n && d < 30; d++) days.add(d);
+  }
+  // 日期格式识别：如"10月4号"、"10月4日" → 根据 startDate 映射为天索引
+  if (startDate) {
+    const tripStart = new Date(startDate);
+    if (!isNaN(tripStart.getTime())) {
+      // 匹配 "M月D号" 或 "M月D日"（支持中文数字和阿拉伯数字）
+      const dateRegex = /(\d{1,2})\s*月\s*(\d{1,2})\s*[号日]/g;
+      while ((m = dateRegex.exec(text)) !== null) {
+        const month = +m[1];
+        const day = +m[2];
+        // 构造目标日期（使用行程年份）
+        const targetDate = new Date(tripStart.getFullYear(), month - 1, day);
+        const diffDays = Math.round((targetDate.getTime() - tripStart.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < 30) {
+          days.add(diffDays);
+        }
+      }
+    }
   }
   return days.size > 0 ? days : null;
 }

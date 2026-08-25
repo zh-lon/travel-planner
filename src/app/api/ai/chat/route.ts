@@ -223,7 +223,7 @@ export async function POST(request: Request) {
               } else {
                 focusDays = confirmResult.focusDays && confirmResult.focusDays.length > 0
                   ? new Set(confirmResult.focusDays)
-                  : detectFocusDays(fullInstruction);
+                  : detectFocusDays(fullInstruction, tripDetail.startDate);
               }
               if (confirmResult.need && confirmResult.questions) {
                 sendStep(send, "confirm", "分析调整意图", "done", "需要用户确认");
@@ -237,7 +237,7 @@ export async function POST(request: Request) {
               sendStep(send, "confirm", "分析调整意图", "done", "意图明确，无需确认");
             } catch {
               sendStep(send, "confirm", "分析调整意图", "done", "确认步骤跳过");
-              focusDays = detectFocusDays(fullInstruction);
+              focusDays = detectFocusDays(fullInstruction, tripDetail.startDate);
             }
           } else if (state.focusDays) {
             // 续跑：从工作流状态恢复
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
             // 前端回传的 AI focusDays（确认后重试场景）
             focusDays = bodyFocusDays.length > 0 ? new Set(bodyFocusDays) : null;
           } else {
-            focusDays = detectFocusDays(fullInstruction);
+            focusDays = detectFocusDays(fullInstruction, tripDetail.startDate);
           }
           state.focusDays = focusDays ? [...focusDays] : [];
 

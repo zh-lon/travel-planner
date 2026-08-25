@@ -128,6 +128,11 @@ export function buildGuidePrompt(p: GuideParams): ChatMessage[] {
 
 export function buildAdjustPrompt(trip: TripDetail, items: ItineraryItemT[], instruction: string): ChatMessage[] {  const dayCount = dayjs(trip.endDate).diff(dayjs(trip.startDate), "day") + 1;
   const paramsDesc = describePlanParams(trip.planParams);
+  // 天-日期映射
+  const dateMap = Array.from({ length: dayCount }, (_, d) => {
+    const date = dayjs(trip.startDate).add(d, "day").format("M月D日");
+    return `第${d + 1}天=${date}`;
+  }).join("，");
   const current = {
     days: Array.from({ length: dayCount }, (_, d) => ({
       items: items
@@ -148,11 +153,11 @@ export function buildAdjustPrompt(trip: TripDetail, items: ItineraryItemT[], ins
   return [
     {
       role: "system",
-      content: `你是资深的国内旅行规划师。你将收到一份现有行程和调整要求，请输出调整后的完整行程——必须完整输出所有天的所有行程项，不要只输出改动部分。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段（如用户说「只改时间」则仅改 startTime/endTime，其余字段必须与输入完全一致）。若调整要求明确要求增加或减少天数（如「多加一天」「压缩成两天」），days 数组长度按要求变化；否则 days 数组长度必须与现有行程天数保持一致。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致（如偏好含「自驾游」则全程按自驾出行安排，不要出现公共交通换乘）。` : ""}${JSON_CONTRACT_ADJUST}`,
+      content: `你是资深的国内旅行规划师。你将收到一份现有行程和调整要求，请输出调整后的完整行程——必须完整输出所有天的所有行程项，不要只输出改动部分。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段（如用户说「只改时间」则仅改 startTime/endTime，其余字段必须与输入完全一致）。若调整要求明确要求增加或减少天数（如「多加一天」「压缩成两天」），days 数组长度按要求变化；否则 days 数组长度必须与现有行程天数保持一致。时间连续性要求：当某天有行程项被删除或增删导致顺序变化时，应重新编排该天所有项的时间（startTime/endTime），保持合理节奏，避免出现不合理的大段空白（如上午全空但下午密集）。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致（如偏好含「自驾游」则全程按自驾出行安排，不要出现公共交通换乘）。` : ""}${JSON_CONTRACT_ADJUST}`,
     },
     {
       role: "user",
-      content: `目的地：${trip.destination}；行程 ${dayCount} 天，${dayjs(trip.startDate).format(
+      content: `目的地：${trip.destination}；行程 ${dayCount} 天（${dateMap}），${dayjs(trip.startDate).format(
         "YYYY年M月D日",
       )}出发。
 
@@ -174,7 +179,15 @@ export function buildAdjustFocusPrompt(
   const dayCount = dayjs(trip.endDate).diff(dayjs(trip.startDate), "day") + 1;
   const paramsDesc = describePlanParams(trip.planParams);
   const sortedFocus = [...focusDays].sort((a, b) => a - b);
-  const dayLabels = sortedFocus.map((d) => `第${d + 1}天`).join("、");
+  const dayLabels = sortedFocus.map((d) => {
+    const date = dayjs(trip.startDate).add(d, "day").format("M月D日");
+    return `第${d + 1}天（${date}）`;
+  }).join("、");
+  // 天-日期映射
+  const dateMap = Array.from({ length: dayCount }, (_, d) => {
+    const date = dayjs(trip.startDate).add(d, "day").format("M月D日");
+    return `第${d + 1}天=${date}`;
+  }).join("，");
   // 只发送关注天的行程项
   const focusCurrent = {
     days: sortedFocus.map((d) => ({
@@ -197,10 +210,11 @@ export function buildAdjustFocusPrompt(
   // 非关注天的概要（提供全局上下文——前后续衔接、已安排景点等——不要求输出）
   const otherDaysOutline = Array.from({ length: dayCount }, (_, d) => {
     if (focusDays.has(d)) return null;
+    const date = dayjs(trip.startDate).add(d, "day").format("M月D日");
     const dayItems = items
       .filter((i) => i.dayIndex === d)
       .sort((a, b) => a.sortOrder - b.sortOrder);
-    if (dayItems.length === 0) return `第${d + 1}天：（暂无安排）`;
+    if (dayItems.length === 0) return `第${d + 1}天（${date}）：（暂无安排）`;
     const summary = dayItems
       .map((i) => {
         const time = i.startTime ? `${i.startTime}${i.endTime ? `-${i.endTime}` : ""} ` : "";
@@ -208,18 +222,18 @@ export function buildAdjustFocusPrompt(
         return `${time}${i.title}${place}`;
       })
       .join(" → ");
-    return `第${d + 1}天：${summary}`;
+    return `第${d + 1}天（${date}）：${summary}`;
   })
     .filter(Boolean)
     .join("\n");
   return [
     {
       role: "system",
-      content: `你是资深的国内旅行规划师。用户只需调整行程中的${dayLabels}，其他天保持不变也不需输出。你只输出${dayLabels}的行程 JSON：days 数组长度必须为 ${sortedFocus.length}（而非行程总天数 ${dayCount}），数组中各项依次对应${dayLabels}。不要输出其他天的内容。调整时需结合其他天的安排确保动线衔接合理（如与前一天住宿地就近、不与已安排的景点重复、跨城行程保持城市动线一致）。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致。` : ""}${JSON_CONTRACT_ADJUST}`,
+      content: `你是资深的国内旅行规划师。用户只需调整行程中的${dayLabels}，其他天保持不变也不需输出。你只输出${dayLabels}的行程 JSON：days 数组长度必须为 ${sortedFocus.length}（而非行程总天数 ${dayCount}），数组中各项依次对应${dayLabels}。不要输出其他天的内容。调整时需结合其他天的安排确保动线衔接合理（如与前一天住宿地就近、不与已安排的景点重复、跨城行程保持城市动线一致）。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段。时间连续性要求：当某天有行程项被删除或增删导致顺序变化时，应重新编排该天所有项的时间（startTime/endTime），保持合理节奏，避免出现不合理的大段空白（如上午全空但下午密集）。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致。` : ""}${JSON_CONTRACT_ADJUST}`,
     },
     {
       role: "user",
-      content: `目的地：${trip.destination}；行程 ${dayCount} 天，${dayjs(trip.startDate).format(
+      content: `目的地：${trip.destination}；行程 ${dayCount} 天（${dateMap}），${dayjs(trip.startDate).format(
         "YYYY年M月D日",
       )}出发。本次只需调整${dayLabels}。
 
@@ -238,10 +252,18 @@ export function buildConfirmPrompt(
   instruction: string,
 ): ChatMessage[] {
   const dayCount = dayjs(trip.endDate).diff(dayjs(trip.startDate), "day") + 1;
+  // 构建天-日期映射：第1天=10月1日，第2天=10月2日…
+  const dateMap = Array.from({ length: dayCount }, (_, d) => {
+    const date = dayjs(trip.startDate).add(d, "day").format("M月D日");
+    return `第${d + 1}天=${date}`;
+  }).join("，");
   const outline = items
     .slice()
     .sort((a, b) => a.dayIndex - b.dayIndex || a.sortOrder - b.sortOrder)
-    .map((i) => `第${i.dayIndex + 1}天 ${i.startTime ?? ""} ${i.title}${i.placeName ? `（${i.placeName}）` : ""}`)
+    .map((i) => {
+      const date = dayjs(trip.startDate).add(i.dayIndex, "day").format("M月D日");
+      return `第${i.dayIndex + 1}天（${date}） ${i.startTime ?? ""} ${i.title}${i.placeName ? `（${i.placeName}）` : ""}`;
+    })
     .join("\n")
     .slice(0, 800);
   return [
@@ -249,7 +271,7 @@ export function buildConfirmPrompt(
       role: "system",
       content: `你是旅行规划助手。用户要求调整行程。请根据指令内容自主判断：
 
-1. 用户要调整哪些天的行程。focusDays 是 0-based 的天索引数组（第 1 天 = 0，第 2 天 = 1…）。如果指令涉及所有天或无法确定具体天，返回空数组。注意：如果用户要将某天的行程移动/放到/插入到另一天，这会影响源天到目标天之间的所有天，应返回空数组（涉及所有天）。
+1. 用户要调整哪些天的行程。focusDays 是 0-based 的天索引数组（第 1 天 = 0，第 2 天 = 1…）。用户可能用日历日期（如"10月4号"）或"第X天"来指代，请根据日期映射关系转换为天索引。如果指令涉及所有天或无法确定具体天，返回空数组。注意：如果用户要将某天的行程移动/放到/插入到另一天，这会影响源天到目标天之间的所有天，应返回空数组（涉及所有天）。
 2. 是否需要先向用户确认后再生成方案。可以提 1-3 个问题，每个问题给出 2-3 个选项。用户会逐个回答所有问题后再生成方案。
 
 无需确认时输出：{"need":false,"focusDays":[0,1]}
@@ -259,7 +281,7 @@ export function buildConfirmPrompt(
     },
     {
       role: "user",
-      content: `行程：${trip.destination}，${dayCount} 天\n现有安排：\n${outline}\n\n用户指令：${instruction}`,
+      content: `行程：${trip.destination}，${dayCount} 天（${dateMap}）\n现有安排：\n${outline}\n\n用户指令：${instruction}`,
     },
   ];
 }
