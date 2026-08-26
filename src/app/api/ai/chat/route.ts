@@ -107,11 +107,16 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // 客户端断开时中止所有 AI 调用（双重保障：request.signal + heartbeat 兜底）
+      const clientAbort = new AbortController();
+      const onClientDisconnect = () => clientAbort.abort();
+      request.signal.addEventListener("abort", onClientDisconnect, { once: true });
       const send: SseSend = (obj) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         } catch {
-          // 客户端已断开
+          // 客户端已断开，通知所有进行中的 AI 调用中止
+          clientAbort.abort();
         }
       };
       const heartbeat = setInterval(() => {
@@ -119,6 +124,7 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
         } catch {
           // 客户端已断开
+          clientAbort.abort();
         }
       }, 15000);
       try {
@@ -225,12 +231,17 @@ export async function POST(request: Request) {
                   ? new Set(confirmResult.focusDays)
                   : detectFocusDays(fullInstruction, tripDetail.startDate);
               }
+              // 保存 AI 意图到工作流状态（续跑/确认后重试时复用）
+              state.allowedFields = confirmResult.allowedFields;
+              state.stayIntent = confirmResult.stayIntent;
               if (confirmResult.need && confirmResult.questions) {
                 sendStep(send, "confirm", "分析调整意图", "done", "需要用户确认");
                 send({
                   type: "confirm",
                   questions: confirmResult.questions,
                   focusDays: confirmResult.focusDays,
+                  allowedFields: confirmResult.allowedFields,
+                  stayIntent: confirmResult.stayIntent,
                 });
                 return;
               }
@@ -291,6 +302,7 @@ export async function POST(request: Request) {
             from === "coords"
               ? { from: "coords", plan: state.generatedPlan! }
               : undefined,
+            clientAbort.signal,
           );
           if (!plan) {
             // runPlanGeneration 已推送 error 事件；按实际失败环节标记步骤
@@ -313,7 +325,7 @@ export async function POST(request: Request) {
               ? mergePartialPlan(plan, items)
               : plan;
           }
-          send({ type: "result", plan: finalPlan, focusDays: focusDays ? [...focusDays] : [] });
+          send({ type: "result", plan: finalPlan, focusDays: focusDays ? [...focusDays] : [], allowedFields: state.allowedFields, stayIntent: state.stayIntent });
           return;
         }
 
@@ -325,6 +337,8 @@ export async function POST(request: Request) {
             buildChatPrompt(tripDetail, history, message, searchContext),
             (delta) => send({ type: "delta", text: delta }),
             2048,
+            undefined,
+            clientAbort.signal,
           );
           sendStep(send, "reply", "AI 正在回答", "done");
           sendStep(send, "complete", "完成", "done");
@@ -343,6 +357,7 @@ export async function POST(request: Request) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {
         clearInterval(heartbeat);
+        request.signal.removeEventListener("abort", onClientDisconnect);
         try {
           controller.close();
         } catch {

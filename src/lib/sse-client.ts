@@ -1,6 +1,6 @@
 // 客户端 SSE 读取工具：POST 请求 + 逐事件回调
 export interface SseEventData {
-  type: "status" | "delta" | "result" | "error" | "findings" | "reply" | "step" | "workflow" | "confirm";
+  type: "status" | "delta" | "result" | "error" | "findings" | "reply" | "step" | "workflow" | "confirm" | "tool_call" | "tool_result" | "thinking";
   text?: string;
   message?: string;
   plan?: unknown;
@@ -24,6 +24,15 @@ export interface SseEventData {
   questions?: Array<{ question: string; options: Array<{ label: string; desc: string }> }>;
   // AI 判断的关注天（0-based），空数组或 undefined 表示所有天
   focusDays?: number[];
+  // AI 判断的意图字段（如 ["time","place"] 或 ["all"]）
+  allowedFields?: string[];
+  // AI 判断的住宿/餐饮意图
+  stayIntent?: { hotel: boolean; food: boolean };
+  // Agent 工具调用事件字段
+  tool?: string;
+  args?: Record<string, unknown>;
+  // 错误事件携带的 workflowId，前端可据此显示"继续"按钮
+  workflowId?: string;
 }
 
 export async function postSse(

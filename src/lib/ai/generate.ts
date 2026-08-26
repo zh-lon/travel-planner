@@ -153,7 +153,7 @@ export function buildAdjustPrompt(trip: TripDetail, items: ItineraryItemT[], ins
   return [
     {
       role: "system",
-      content: `你是资深的国内旅行规划师。你将收到一份现有行程和调整要求，请输出调整后的完整行程——必须完整输出所有天的所有行程项，不要只输出改动部分。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段（如用户说「只改时间」则仅改 startTime/endTime，其余字段必须与输入完全一致）。若调整要求明确要求增加或减少天数（如「多加一天」「压缩成两天」），days 数组长度按要求变化；否则 days 数组长度必须与现有行程天数保持一致。时间连续性要求：当某天有行程项被删除或增删导致顺序变化时，应重新编排该天所有项的时间（startTime/endTime），保持合理节奏，避免出现不合理的大段空白（如上午全空但下午密集）。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致（如偏好含「自驾游」则全程按自驾出行安排，不要出现公共交通换乘）。` : ""}${JSON_CONTRACT_ADJUST}`,
+      content: `你是资深的国内旅行规划师。你将收到一份现有行程和调整要求，请输出调整后的完整行程——必须完整输出所有天的所有行程项，不要只输出改动部分。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段（如用户说「只改时间」则仅改 startTime/endTime，其余字段必须与输入完全一致）。若调整要求明确要求增加或减少天数（如「多加一天」「压缩成两天」），days 数组长度按要求变化；否则 days 数组长度必须与现有行程天数保持一致。时间连续性要求：当某天有行程项被删除或增删导致顺序变化时，应重新编排该天所有项的时间（startTime/endTime），保持合理节奏，避免出现不合理的大段空白（如上午全空但下午密集）。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。注意：用户在指令中列举具体菜品/食物名称（如「米线」「火锅」「粑粑」「手抓饭」等）时，视为明确涉及餐饮，应正常输出此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致（如偏好含「自驾游」则全程按自驾出行安排，不要出现公共交通换乘）。` : ""}${JSON_CONTRACT_ADJUST}`,
     },
     {
       role: "user",
@@ -229,7 +229,7 @@ export function buildAdjustFocusPrompt(
   return [
     {
       role: "system",
-      content: `你是资深的国内旅行规划师。用户只需调整行程中的${dayLabels}，其他天保持不变也不需输出。你只输出${dayLabels}的行程 JSON：days 数组长度必须为 ${sortedFocus.length}（而非行程总天数 ${dayCount}），数组中各项依次对应${dayLabels}。不要输出其他天的内容。调整时需结合其他天的安排确保动线衔接合理（如与前一天住宿地就近、不与已安排的景点重复、跨城行程保持城市动线一致）。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段。时间连续性要求：当某天有行程项被删除或增删导致顺序变化时，应重新编排该天所有项的时间（startTime/endTime），保持合理节奏，避免出现不合理的大段空白（如上午全空但下午密集）。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致。` : ""}${JSON_CONTRACT_ADJUST}`,
+      content: `你是资深的国内旅行规划师。用户只需调整行程中的${dayLabels}，其他天保持不变也不需输出。你只输出${dayLabels}的行程 JSON：days 数组长度必须为 ${sortedFocus.length}（而非行程总天数 ${dayCount}），数组中各项依次对应${dayLabels}。不要输出其他天的内容。调整时需结合其他天的安排确保动线衔接合理（如与前一天住宿地就近、不与已安排的景点重复、跨城行程保持城市动线一致）。未被调整要求直接涉及的字段必须从输入 JSON 中逐字复制原值，不得改写、润色、重新措辞或增删——包括标题、类型、地点名、费用、预约状态、备注等。仅当调整要求明确涉及某字段时才可改动该字段。时间连续性要求：当某天有行程项被删除或增删导致顺序变化时，应重新编排该天所有项的时间（startTime/endTime），保持合理节奏，避免出现不合理的大段空白（如上午全空但下午密集）。特别要求：住宿（HOTEL）和餐饮（FOOD）类行程项，除非调整要求明确涉及住宿或餐饮（如提到「酒店」「住宿」「餐厅」「餐饮」「美食」「吃饭」等），否则不要新增、删除或修改这些类型的行程项——必须将现有住宿和餐饮项原样包含在输出中，不要改动它们的任何字段，也不要新增此类行程项。注意：用户在指令中列举具体菜品/食物名称（如「米线」「火锅」「粑粑」「手抓饭」等）时，视为明确涉及餐饮，应正常输出此类行程项。${paramsDesc ? `\n该行程的规划参数：${paramsDesc}，调整时必须保持与这些参数一致。` : ""}${JSON_CONTRACT_ADJUST}`,
     },
     {
       role: "user",
@@ -273,9 +273,11 @@ export function buildConfirmPrompt(
 
 1. 用户要调整哪些天的行程。focusDays 是 0-based 的天索引数组（第 1 天 = 0，第 2 天 = 1…）。用户可能用日历日期（如"10月4号"）或"第X天"来指代，请根据日期映射关系转换为天索引。如果指令涉及所有天或无法确定具体天，返回空数组。注意：如果用户要将某天的行程移动/放到/插入到另一天，这会影响源天到目标天之间的所有天，应返回空数组（涉及所有天）。
 2. 是否需要先向用户确认后再生成方案。可以提 1-3 个问题，每个问题给出 2-3 个选项。用户会逐个回答所有问题后再生成方案。
+3. 用户意图涉及哪些字段的修改。allowedFields 是字符串数组，可选值：time（时间）、title（标题）、place（地点）、cost（费用）、notes（备注）、booking（预约）、order（顺序/删除/移动）、type（类型）、days（增减天数）。如果用户要求"完善行程""填充内容"等无特定字段限制的指令，返回 ["all"]。如果用户明确说"只改时间"，则返回 ["time"]。
+4. 用户是否明确涉及住宿或餐饮。stayIntent 对象：hotel 为 true 表示用户提到了住宿相关（酒店/民宿/入住/退房等），food 为 true 表示用户提到了餐饮相关（餐厅/美食/吃饭/具体菜品名等）。
 
-无需确认时输出：{"need":false,"focusDays":[0,1]}
-需要确认时输出：{"need":true,"focusDays":[0,1],"questions":[{"question":"简短提问","options":[{"label":"选项","desc":"简述"}]}]}
+无需确认时输出：{"need":false,"focusDays":[0,1],"allowedFields":["all"],"stayIntent":{"hotel":false,"food":true}}
+需要确认时输出：{"need":true,"focusDays":[0,1],"allowedFields":["time","place"],"stayIntent":{"hotel":false,"food":false},"questions":[{"question":"简短提问","options":[{"label":"选项","desc":"简述"}]}]}
 
 只输出 JSON。`,
     },
@@ -295,6 +297,8 @@ export interface ConfirmResult {
   need: boolean;
   questions?: ConfirmQuestion[];
   focusDays?: number[]; // 0-based 天索引，空数组或 undefined 表示所有天
+  allowedFields?: string[]; // AI 判断的意图字段，["all"] 表示无特定限制
+  stayIntent?: { hotel: boolean; food: boolean }; // AI 判断的住宿/餐饮意图
 }
 
 export function parseConfirmResult(raw: string): ConfirmResult {
@@ -304,7 +308,19 @@ export function parseConfirmResult(raw: string): ConfirmResult {
     const focusDays = Array.isArray(parsed.focusDays)
       ? parsed.focusDays.filter((d: unknown) => typeof d === "number" && d >= 0) as number[]
       : undefined;
-    if (parsed.need === false) return { need: false, focusDays };
+    // 解析 allowedFields
+    const allowedFields = Array.isArray(parsed.allowedFields)
+      ? parsed.allowedFields.filter((f: unknown) => typeof f === "string") as string[]
+      : undefined;
+    // 解析 stayIntent
+    const stayIntent = parsed.stayIntent && typeof parsed.stayIntent === "object"
+      ? {
+          hotel: typeof parsed.stayIntent.hotel === "boolean" ? parsed.stayIntent.hotel : false,
+          food: typeof parsed.stayIntent.food === "boolean" ? parsed.stayIntent.food : false,
+        }
+      : undefined;
+    const extras = { allowedFields, stayIntent };
+    if (parsed.need === false) return { need: false, focusDays, ...extras };
     // 新格式：questions 数组
     if (parsed.need === true && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
       const questions = parsed.questions
@@ -319,7 +335,7 @@ export function parseConfirmResult(raw: string): ConfirmResult {
             })),
         }))
         .filter((q: { question: string; options: Array<{ label: string; desc: string }> }) => q.options.length > 0);
-      if (questions.length > 0) return { need: true, questions, focusDays };
+      if (questions.length > 0) return { need: true, questions, focusDays, ...extras };
     }
     // 旧格式兼容：单个 question + options
     if (parsed.need === true && Array.isArray(parsed.options) && parsed.options.length > 0) {
@@ -335,6 +351,7 @@ export function parseConfirmResult(raw: string): ConfirmResult {
             })),
         }],
         focusDays,
+        ...extras,
       };
     }
   } catch {
@@ -468,7 +485,10 @@ export async function matchPlanCoords(
   webKey: string,
   city: string,
   aiConfig?: AiConfig,
+  onPoiMatched?: () => void,
+  signal?: AbortSignal,
 ): Promise<void> {
+  if (!city) return; // 无城市信息则跳过坐标匹配
   const cache = new Map<string, Awaited<ReturnType<typeof geocodeFirst>>>();
   const cities = city
     .split(/[、,，/\s]+/)
@@ -481,6 +501,8 @@ export async function matchPlanCoords(
   let located = 0;
   const failed: string[] = [];
   for (const day of plan.days) {
+    // 客户端已断开，立即终止
+    if (signal?.aborted) return;
     // 多城市行程：从 theme 提取当天所在城市作为该天的兜底（theme 没体现城市时为 null，不退回整串 city）
     const dayCity = isMultiCity ? extractCityFromTheme(day.theme, cities) : null;
     for (const item of day.items) {
@@ -513,8 +535,10 @@ export async function matchPlanCoords(
         item.lat = poi.lat;
         item.address = poi.address ?? poi.district ?? null;
         located++;
+        onPoiMatched?.();
       } else {
         failed.push(name);
+        onPoiMatched?.();
       }
     }
   }
@@ -637,6 +661,7 @@ export async function runPlanGeneration(
     onCoordsStart?: () => void;
   },
   resume?: { from: "coords"; plan: AiPlan },
+  signal?: AbortSignal,
 ): Promise<AiPlan | null> {
   const convo: ChatMessage[] = [...input.messages];
   let plan: AiPlan | null = resume?.plan ?? null;
@@ -650,7 +675,10 @@ export async function runPlanGeneration(
       });
       let raw = "";
       try {
-        raw = await chatStream(config, convo, (delta) => send({ type: "delta", text: delta }), config.maxTokens);
+        // 方案生成需要较多 token 输出完整 JSON，使用 config.maxTokens 但保证不低于 8000
+        // agent 循环中的 chatWithToolsStream 硬编码 4096 不受此影响
+        const genMaxTokens = config.maxTokens && config.maxTokens > 8000 ? config.maxTokens : 8000;
+        raw = await chatStream(config, convo, (delta) => send({ type: "delta", text: delta }), genMaxTokens, undefined, signal);
       } catch (err) {
         const msg =
           err instanceof Error
@@ -685,8 +713,17 @@ export async function runPlanGeneration(
   const webKey = (settings["amap.webKey"] || "").trim();
   if (webKey) {
     hooks?.onCoordsStart?.();
-    send({ type: "status", text: "正在匹配地点坐标…" });
-    await matchPlanCoords(plan, webKey, input.city, config);
+    // 统计待匹配的 POI 数量，用于进度反馈
+    const totalPoiCount = plan.days.reduce((sum, d) => sum + d.items.filter((i) => i.placeName?.trim()).length, 0);
+    let matchedCount = 0;
+    const onPoiMatched = () => {
+      matchedCount++;
+      if (totalPoiCount > 0 && matchedCount % 5 === 0) {
+        send({ type: "status", text: `正在匹配地点坐标（${matchedCount}/${totalPoiCount}）…` });
+      }
+    };
+    send({ type: "status", text: totalPoiCount > 0 ? `正在匹配 ${totalPoiCount} 个地点坐标…` : "正在匹配地点坐标…" });
+    await matchPlanCoords(plan, webKey, input.city, config, onPoiMatched, signal);
   } else {
     send({ type: "status", text: "未配置高德 Web 服务 Key，已跳过坐标匹配" });
   }
@@ -761,15 +798,21 @@ export function planStreamResponse(
     preCheck?: (send: (obj: unknown) => void, config: AiConfig, settings: SettingsMap) => Promise<boolean>;
     resultData?: () => Record<string, unknown>;
   },
+  request?: Request,
 ): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // 客户端断开时中止所有 AI 调用（双重保障：request.signal + heartbeat 兜底）
+      const clientAbort = new AbortController();
+      const onClientDisconnect = () => clientAbort.abort();
+      if (request) request.signal.addEventListener("abort", onClientDisconnect, { once: true });
       const send = (obj: unknown) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         } catch {
-          // 客户端已断开
+          // 客户端已断开，通知所有进行中的 AI 调用中止
+          clientAbort.abort();
         }
       };
       // 心跳：每 15 秒发一个 SSE 注释，防止 Nginx/Cloudflare 等代理因无数据而超时断连
@@ -778,6 +821,7 @@ export function planStreamResponse(
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
         } catch {
           // 客户端已断开
+          clientAbort.abort();
         }
       }, 15000);
       try {
@@ -793,7 +837,7 @@ export function planStreamResponse(
           if (!shouldContinue) return;
         }
         const input = await build(settings);
-        const plan = await runPlanGeneration(send, config, settings, input);
+        const plan = await runPlanGeneration(send, config, settings, input, undefined, undefined, clientAbort.signal);
         if (plan) {
           const finalPlan = options?.transformPlan ? options.transformPlan(plan) : plan;
           const extras = options?.resultData ? options.resultData() : {};
@@ -803,6 +847,7 @@ export function planStreamResponse(
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {
         clearInterval(heartbeat);
+        if (request) request.signal.removeEventListener("abort", onClientDisconnect);
         try {
           controller.close();
         } catch {

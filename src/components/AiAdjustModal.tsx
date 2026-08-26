@@ -35,6 +35,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
   } | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
   const [aiFocusDays, setAiFocusDays] = useState<number[] | null>(null);
+  const [aiAllowedFields, setAiAllowedFields] = useState<string[] | null>(null);
+  const [aiStayIntent, setAiStayIntent] = useState<{ hotel: boolean; food: boolean } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -45,9 +47,11 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
           diffPlan(trip.items, plan),
           instruction,
           aiFocusDays !== null ? new Set(aiFocusDays) : null,
+          aiAllowedFields,
+          aiStayIntent,
         )
       : []),
-    [plan, trip.items, instruction, aiFocusDays],
+    [plan, trip.items, instruction, aiFocusDays, aiAllowedFields, aiStayIntent],
   );
 
   // 方案到达时默认全选所有变更
@@ -67,6 +71,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
       setConfirmData(null);
       setCustomAnswer("");
       setAiFocusDays(null);
+      setAiAllowedFields(null);
+      setAiStayIntent(null);
     }
   }, [open]);
 
@@ -95,6 +101,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
             setPlan(event.plan as AiPlan);
             // 空数组视为 null（AI 返回 [] 表示"所有天"，不做天级别过滤）
             setAiFocusDays(Array.isArray(event.focusDays) && event.focusDays.length > 0 ? event.focusDays : null);
+            setAiAllowedFields(Array.isArray(event.allowedFields) ? event.allowedFields : null);
+            setAiStayIntent(event.stayIntent && typeof event.stayIntent === "object" ? event.stayIntent : null);
             setPhase("preview");
           } else if (event.type === "confirm") {
             setConfirmData({
@@ -103,6 +111,8 @@ export default function AiAdjustModal({ open, trip, onCancel, onApplied }: Props
               answers: [],
               focusDays: Array.isArray(event.focusDays) ? event.focusDays : undefined,
             });
+            setAiAllowedFields(Array.isArray(event.allowedFields) ? event.allowedFields : null);
+            setAiStayIntent(event.stayIntent && typeof event.stayIntent === "object" ? event.stayIntent : null);
             setPhase("confirm");
           } else if (event.type === "error") {
             message.error(event.message ?? "生成失败", 6);

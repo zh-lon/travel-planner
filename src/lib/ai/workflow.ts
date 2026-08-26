@@ -15,6 +15,20 @@ export interface WorkflowState {
   generatedPlan?: AiPlan;
   // AI 判断的关注天（0-based），续跑时复用
   focusDays?: number[];
+  // AI 判断的意图字段（如 ["time","place"] 或 ["all"]），续跑时复用
+  allowedFields?: string[];
+  // AI 判断的住宿/餐饮意图，续跑时复用
+  stayIntent?: { hotel: boolean; food: boolean };
+  // Agent 工作流：Agent 循环的完整对话消息（含 tool_call / tool 结果），用于续跑
+  agentMessages?: ChatMessage[];
+  // Agent 工作流：当前迭代次数
+  agentIteration?: number;
+  // Agent 工作流：是否已进入 plan 阶段（propose_plan 已调用）
+  agentPlanPhase?: boolean;
+  // Agent 工作流：propose_plan 的 instruction（续跑 plan 阶段时使用）
+  agentInstruction?: string;
+  // Agent 工作流：propose_plan 的 focusDays（续跑 plan 阶段时使用）
+  agentFocusDays?: number[];
 }
 
 const store = new Map<string, WorkflowState>();

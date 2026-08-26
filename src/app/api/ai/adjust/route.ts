@@ -71,6 +71,8 @@ export async function POST(request: Request) {
   // AI 判断的关注天（优先用 AI 结果，回退到正则）
   // 使用 let：preCheck 回调中会用 AI 结果覆盖
   let focusDays: Set<number> | null;
+  let aiAllowedFields: string[] | undefined;
+  let aiStayIntent: { hotel: boolean; food: boolean } | undefined;
   if (confirmAnswer && bodyFocusDays !== undefined) {
     // 前端回传的 AI focusDays（确认后重试场景）
     focusDays = bodyFocusDays.length > 0 ? new Set(bodyFocusDays) : null;
@@ -120,12 +122,17 @@ export async function POST(request: Request) {
                   ? new Set(confirmResult.focusDays)
                   : detectFocusDays(fullInstruction, tripDetail.startDate);
               }
+              // 保存 AI 意图，后续 resultData 中回传前端
+              aiAllowedFields = confirmResult.allowedFields;
+              aiStayIntent = confirmResult.stayIntent;
               if (confirmResult.need && confirmResult.questions) {
                 send({ type: "step", id: "confirm", label: "分析调整意图", status: "done", detail: "需要用户确认" });
                 send({
                   type: "confirm",
                   questions: confirmResult.questions,
                   focusDays: confirmResult.focusDays,
+                  allowedFields: confirmResult.allowedFields,
+                  stayIntent: confirmResult.stayIntent,
                 });
                 return false;
               }
@@ -135,7 +142,8 @@ export async function POST(request: Request) {
             }
             return true;
           },
-      resultData: () => ({ focusDays: focusDays ? [...focusDays] : [] }),
+      resultData: () => ({ focusDays: focusDays ? [...focusDays] : [], allowedFields: aiAllowedFields, stayIntent: aiStayIntent }),
     },
+    request,
   );
 }

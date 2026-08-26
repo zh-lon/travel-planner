@@ -189,7 +189,7 @@ export function diffPlan(oldItems: ItineraryItemT[], plan: AiPlan): DiffEntry[] 
 function detectAdjustFields(instruction: string): Set<string> {
   const text = instruction;
   const fields = new Set<string>();
-  if (/时间|几点|早|晚|重排|错开|提前|推后|时段|开(?:始|门)|关(?:门|闭)/.test(text)) fields.add("time");
+  if (/时间|几点|提早|提前|推迟|推后|延后|重排|错开|时段|太早|太晚|早(?:一)?点|晚(?:一)?点|开(?:始|门)时间|关(?:门|闭)时间/.test(text)) fields.add("time");
   if (/标题|名字|名称|改叫|改名/.test(text)) fields.add("title");
   if (/地点|位置|换到|搬到/.test(text)) fields.add("place");
   if (/费用|预算|多少钱|价格|花费|成本|贵|便宜/.test(text)) fields.add("cost");
@@ -213,7 +213,8 @@ function detectAdjustFields(instruction: string): Set<string> {
 function detectStayIntent(instruction: string): { hotel: boolean; food: boolean } {
   const text = instruction;
   const hotel = /住宿|酒店|民宿|宾馆|旅馆|入住|退房|换住|客栈|旅舍/.test(text);
-  const food = /餐饮|吃饭|餐厅|美食|饭店|用餐|早餐|午餐|晚餐|早饭|午饭|晚饭|宵夜|小吃|觅食|饭点|就餐|聚餐/.test(text);
+  // 通用餐饮关键词 + 具体菜品/食物名称（用户列举菜品时视为明确涉及餐饮）
+  const food = /餐饮|吃饭|餐厅|美食|饭店|用餐|早餐|午餐|晚餐|早饭|午饭|晚饭|宵夜|小吃|觅食|饭点|就餐|聚餐|米线|火锅|米粉|粑粑|手抓饭|洋芋|豆花|烤鱼|烧烤|麻辣烫|串串|凉粉|酸辣粉|螺蛳粉|卤味|烧腊|肠粉|煲仔饭|打边炉|早茶|下午茶|甜品|冰淇淋|奶茶|咖啡/.test(text);
   return { hotel, food };
 }
 
@@ -289,21 +290,27 @@ export function detectFocusDays(instruction: string, startDate?: string): Set<nu
 }
 
 // 回退 AI 擅自修改的非意图变更：天级别过滤 + 字段级回退
+// aiAllowedFields / aiStayIntent: 由 AI confirm 步骤判断，优先使用；为 null/undefined 时回退正则
 export function revertNonIntentFields(
   entries: DiffEntry[],
   instruction: string,
   focusDaysOverride?: Set<number> | null,
+  aiAllowedFields?: string[] | null,
+  aiStayIntent?: { hotel: boolean; food: boolean } | null,
 ): DiffEntry[] {
-  const allowed = detectAdjustFields(instruction);
+  // 优先使用 AI 意图，AI 无数据时回退正则兜底
+  const allowed: Set<string> = aiAllowedFields && aiAllowedFields.length > 0
+    ? new Set(aiAllowedFields)
+    : detectAdjustFields(instruction);
   // 空 Set 视为 null（AI 返回 focusDays: [] 表示"所有天"，不应做天级别过滤）
   const rawFocusDays = focusDaysOverride !== undefined ? focusDaysOverride : detectFocusDays(instruction);
   const focusDays = rawFocusDays && rawFocusDays.size > 0 ? rawFocusDays : null;
-  // 住宿/餐饮意图检测：用户未明确提及时不增删改此类行程项
-  const stayIntent = detectStayIntent(instruction);
+  // 住宿/餐饮意图检测：优先 AI 判断，AI 无数据时回退正则
+  const stayIntent = aiStayIntent ?? detectStayIntent(instruction);
   const hasStayProtection = !stayIntent.hotel || !stayIntent.food;
   // 无天级别过滤、无字段级别过滤、无住宿餐饮保护时，直接返回
   if (allowed.has("all") && !focusDays && !hasStayProtection) return entries;
-  const allowDayChange = allowed.has("order") || allowed.has("days");
+  const allowDayChange = allowed.has("order") || allowed.has("days") || allowed.has("all");
   const doFieldRevert = !allowed.has("all");
   const result: DiffEntry[] = [];
   for (const e of entries) {

@@ -78,11 +78,16 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // 客户端断开时中止所有 AI 调用（双重保障：request.signal + heartbeat 兜底）
+      const clientAbort = new AbortController();
+      const onClientDisconnect = () => clientAbort.abort();
+      request.signal.addEventListener("abort", onClientDisconnect, { once: true });
       const send = (obj: unknown) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         } catch {
-          // 客户端已断开
+          // 客户端已断开，通知所有进行中的 AI 调用中止
+          clientAbort.abort();
         }
       };
       // 心跳：每 15 秒发一个 SSE 注释，防止代理因无数据而超时断连
@@ -91,6 +96,7 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
         } catch {
           // 客户端已断开
+          clientAbort.abort();
         }
       }, 15000);
       try {
@@ -146,7 +152,7 @@ export async function POST(request: Request) {
           send({ type: "status", text: attempt === 1 ? (mode === "overview" ? "正在生成行程概览…" : "AI 正在思考…") : "输出校验未通过，正在重试…" });
           let raw = "";
           try {
-            raw = await chatStream(config, convo, (delta) => send({ type: "delta", text: delta }), config.maxTokens);
+            raw = await chatStream(config, convo, (delta) => send({ type: "delta", text: delta }), config.maxTokens, undefined, clientAbort.signal);
           } catch (err) {
             const msg =
               err instanceof Error
@@ -197,7 +203,7 @@ export async function POST(request: Request) {
           const webKey = (settings["amap.webKey"] || "").trim();
           if (webKey) {
             send({ type: "status", text: "正在匹配地点坐标…" });
-            await matchPlanCoords({ days: [day] }, webKey, destination);
+            await matchPlanCoords({ days: [day] }, webKey, destination, undefined, undefined, clientAbort.signal);
           }
         }
 
@@ -211,6 +217,7 @@ export async function POST(request: Request) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {
         clearInterval(heartbeat);
+        request.signal.removeEventListener("abort", onClientDisconnect);
         try {
           controller.close();
         } catch {

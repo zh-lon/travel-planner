@@ -44,5 +44,5 @@ export async function POST(request: Request) {
     messages: buildGuidePrompt(params),
     expectedDays: days ?? 0, // 0 = 天数由 AI 判断，不做强校验
     city: destination,
-  }));
+  }), undefined, request);
 }

@@ -6,10 +6,13 @@ import { App, Button, Input, Modal, Space, Switch, Tag, Typography } from "antd"
 import {
   CloseCircleFilled,
   DoubleRightOutlined,
+  ForwardOutlined,
   GlobalOutlined,
   ReloadOutlined,
   RobotOutlined,
+  SearchOutlined,
   SendOutlined,
+  ToolOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -19,7 +22,7 @@ import AiDiffPreview from "@/components/AiDiffPreview";
 import WorkflowSteps, { type WorkflowStepItem } from "@/components/WorkflowSteps";
 import { composeApplyItems, diffPlan, revertNonIntentFields } from "@/lib/ai/diff";
 import { postSse } from "@/lib/sse-client";
-import type { AiPlan, TripDetail } from "@/types";
+import type { AiPlan, ItineraryItemT, TripDetail } from "@/types";
 
 interface Props {
   trip: TripDetail;
@@ -34,6 +37,21 @@ interface ChatMsg {
   role: "user" | "assistant";
   content: string;
 }
+
+interface AgentStep {
+  tool: string;
+  args: Record<string, unknown>;
+  summary?: string;
+  status: "running" | "done" | "error";
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  search_web: "联网搜索",
+  search_pois: "POI 搜索",
+  get_weather: "天气查询",
+  get_itinerary: "读取行程",
+  propose_plan: "生成方案",
+};
 
 const QUICK_PROMPTS = [
   "这里有什么必吃的美食？",
@@ -68,11 +86,18 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
   } | null>(null);
   const [customAnswer, setCustomAnswer] = useState("");
   const [aiFocusDays, setAiFocusDays] = useState<number[] | null>(null);
+  const [aiAllowedFields, setAiAllowedFields] = useState<string[] | null>(null);
+  const [aiStayIntent, setAiStayIntent] = useState<{ hotel: boolean; food: boolean } | null>(null);
+  const [useAgent, setUseAgent] = useState(true);
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const [reasoningContent, setReasoningContent] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const itemsSnapshotRef = useRef<ItineraryItemT[] | null>(null); // 应用前快照，用于撤销
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const failedMsgRef = useRef<string>("");
   const workflowIdRef = useRef<string>("");
   const failedStepRef = useRef<string>("");
+  const agentErrorWorkflowIdRef = useRef<string>(""); // Agent 错误时用于"继续"的 workflowId
 
   const entries = useMemo(
     () => (plan
@@ -80,9 +105,11 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
           diffPlan(trip.items, plan),
           adjustInstruction,
           aiFocusDays !== null ? new Set(aiFocusDays) : null,
+          aiAllowedFields,
+          aiStayIntent,
         )
       : []),
-    [plan, trip.items, adjustInstruction, aiFocusDays],
+    [plan, trip.items, adjustInstruction, aiFocusDays, aiAllowedFields, aiStayIntent],
   );
 
   useEffect(() => {
@@ -94,7 +121,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
   // 自动滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [streamText, status, phase, messages, steps]);
+  }, [streamText, status, phase, messages, steps, agentSteps, reasoningContent]);
 
   // 组件卸载时中断进行中的请求
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -117,13 +144,19 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
     if (addUserBubble) setMessages((prev) => [...prev, { role: "user", content: msg }]);
     failedMsgRef.current = msg;
     failedStepRef.current = "";
+    agentErrorWorkflowIdRef.current = "";
     setErrorInfo(null);
 
     setPhase("generating");
     if (!keepSteps) setSteps([]);
+    setAgentSteps([]);
+    setReasoningContent("");
     setStreamText("");
     setStatus("正在启动工作流…");
     setPlan(null);
+    setAiFocusDays(null);
+    setAiAllowedFields(null);
+    setAiStayIntent(null);
 
     // 失败统一处理：保留步骤条现场，在对话区展示失败气泡供重试
     const failWith = (errMsg: string) => {
@@ -137,21 +170,46 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
     abortRef.current = controller;
     let full = "";
     let gotTerminal = false;
+
+    const endpoint = useAgent ? "/api/ai/agent" : "/api/ai/chat";
+
     try {
       await postSse(
-        "/api/ai/chat",
+        endpoint,
         {
           tripId: trip.id,
           message: msg,
           history,
           webSearch,
           ...(resume ? { workflowId: resume.workflowId, resumeFrom: resume.from } : {}),
-          ...(confirmAnswer ? { confirmAnswer } : {}),
-          ...(confirmAnswer && focusDays ? { focusDays } : {}),
+          ...(!useAgent && confirmAnswer ? { confirmAnswer } : {}),
+          ...(!useAgent && confirmAnswer && focusDays ? { focusDays } : {}),
         },
         (event) => {
-          if (event.type === "workflow" && event.id) workflowIdRef.current = String(event.id);
-          else if (event.type === "step" && event.id) {
+          // Agent 模式特有事件
+          if (event.type === "thinking" && event.text) {
+            setReasoningContent((prev) => prev + event.text);
+          } else if (event.type === "tool_call") {
+            setAgentSteps((prev) => [
+              ...prev,
+              { tool: event.tool ?? "?", args: event.args ?? {}, status: "running" },
+            ]);
+          } else if (event.type === "tool_result") {
+            setAgentSteps((prev) => {
+              const updated = [...prev];
+              const lastRunning = updated.findLastIndex((s) => s.status === "running");
+              if (lastRunning >= 0) {
+                updated[lastRunning] = {
+                  ...updated[lastRunning],
+                  summary: event.summary,
+                  status: "done",
+                };
+              }
+              return updated;
+            });
+          } else if (event.type === "workflow" && event.id) {
+            workflowIdRef.current = String(event.id);
+          } else if (event.type === "step" && event.id) {
             const entry: WorkflowStepItem = {
               id: event.id,
               label: event.label ?? event.id,
@@ -181,8 +239,9 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
           } else if (event.type === "result" && event.plan) {
             gotTerminal = true;
             setPlan(event.plan as AiPlan);
-            // 空数组视为 null（AI 返回 [] 表示"所有天"，不做天级别过滤）
             setAiFocusDays(Array.isArray(event.focusDays) && event.focusDays.length > 0 ? event.focusDays : null);
+            setAiAllowedFields(Array.isArray(event.allowedFields) ? event.allowedFields : null);
+            setAiStayIntent(event.stayIntent && typeof event.stayIntent === "object" ? event.stayIntent : null);
             setAdjustInstruction(confirmAnswer ? `${msg}（用户确认选择：${confirmAnswer}）` : msg);
             setStreamText("");
             setDiffOpen(true);
@@ -196,10 +255,15 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
               msg,
               focusDays: Array.isArray(event.focusDays) ? event.focusDays : undefined,
             });
+            setAiAllowedFields(Array.isArray(event.allowedFields) ? event.allowedFields : null);
+            setAiStayIntent(event.stayIntent && typeof event.stayIntent === "object" ? event.stayIntent : null);
             setStreamText("");
             setPhase("idle");
           } else if (event.type === "error") {
             gotTerminal = true;
+            if (useAgent && event.workflowId) {
+              agentErrorWorkflowIdRef.current = event.workflowId;
+            }
             failWith(event.message ?? "AI 调用失败");
           }
         },
@@ -241,6 +305,18 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
     }
   };
 
+  // Agent 模式：从断点继续（携带 workflowId + resumeFrom: "agent"）
+  const handleContinue = () => {
+    if (!failedMsgRef.current) return;
+    const wfId = agentErrorWorkflowIdRef.current || workflowIdRef.current;
+    if (!wfId) {
+      // 无 workflowId，回退到普通重试
+      handleSend(failedMsgRef.current, false);
+      return;
+    }
+    handleSend(failedMsgRef.current, false, { workflowId: wfId, from: "agent" }, true);
+  };
+
   const handleConfirmSelect = (label: string) => {
     const data = confirmData;
     if (!data) return;
@@ -273,6 +349,9 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
       message.error("对比数据异常（原始项全部丢失），已阻止应用以保护数据，请重新生成方案");
       return;
     }
+    // 保存快照，用于撤销
+    itemsSnapshotRef.current = trip.items;
+    const originalDayCount = dayjs(trip.endDate).diff(dayjs(trip.startDate), "day") + 1;
     setApplying(true);
     try {
       const { items, days } = composeApplyItems(entries, selected, plan.days.length);
@@ -283,10 +362,24 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) throw new Error(data.error);
-      message.success(`已应用 ${selectedCount} 项变更`);
+      // 显示成功消息 + 撤销按钮
+      message.success(
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          已应用 {selectedCount} 项变更
+          <Button
+            type="link"
+            size="small"
+            onClick={() => handleUndo(originalDayCount)}
+            style={{ color: "#fff", textDecoration: "underline", padding: 0, height: "auto" }}
+          >
+            撤销
+          </Button>
+        </span>,
+        0,
+      );
       // 行程已变更，清空历史对话避免旧上下文误导 AI
       setMessages([
-        { role: "assistant", content: `已按方案应用 ${selectedCount} 项变更，行程已更新。还需要继续调整吗？` },
+        { role: "assistant", content: `已按方案应用 ${selectedCount} 项变更，行程已更新。可点击上方"撤销"恢复。还需要继续调整吗？` },
       ]);
       setPlan(null);
       setPhase("idle");
@@ -297,6 +390,46 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
       message.error(err instanceof Error && err.message ? err.message : "应用失败");
     } finally {
       setApplying(false);
+    }
+  };
+
+  const handleUndo = async (originalDayCount: number) => {
+    const snapshot = itemsSnapshotRef.current;
+    if (!snapshot || snapshot.length === 0) {
+      message.warning("没有可恢复的快照");
+      return;
+    }
+    message.destroy();
+    try {
+      const items = snapshot.map((it) => ({
+        id: it.id,
+        dayIndex: it.dayIndex,
+        sortOrder: it.sortOrder,
+        type: it.type,
+        title: it.title,
+        startTime: it.startTime,
+        endTime: it.endTime,
+        placeName: it.placeName,
+        lng: it.lng,
+        lat: it.lat,
+        address: it.address,
+        estimatedCost: it.estimatedCost,
+        needBooking: it.needBooking,
+        notes: it.notes,
+        aiGenerated: it.aiGenerated,
+      }));
+      const res = await fetch(`/api/trips/${trip.id}/apply-items`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items, days: originalDayCount }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) throw new Error(data.error);
+      message.success("已撤销，行程已恢复");
+      itemsSnapshotRef.current = null;
+      onApplied();
+    } catch (err) {
+      message.error(err instanceof Error && err.message ? err.message : "撤销失败");
     }
   };
 
@@ -419,6 +552,53 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
             问答咨询 · 按需调整行程
           </Typography.Text>
         </div>
+        <div
+          title={useAgent ? "Agent 模式：AI 可主动搜索、查天气、读行程，自主决策" : "Chat 模式：普通问答对话"}
+          style={{
+            display: "flex",
+            borderRadius: 6,
+            overflow: "hidden",
+            border: "1px solid #d9d9d9",
+            marginRight: 4,
+            flexShrink: 0,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setUseAgent(true)}
+            style={{
+              padding: "3px 12px",
+              fontSize: 12,
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              background: useAgent ? "#0d9488" : "transparent",
+              color: useAgent ? "#fff" : "#999",
+              transition: "all 0.2s",
+              lineHeight: "18px",
+            }}
+          >
+            Agent
+          </button>
+          <button
+            type="button"
+            onClick={() => setUseAgent(false)}
+            style={{
+              padding: "3px 12px",
+              fontSize: 12,
+              fontWeight: 600,
+              border: "none",
+              borderLeft: "1px solid #d9d9d9",
+              cursor: "pointer",
+              background: !useAgent ? "#0d9488" : "transparent",
+              color: !useAgent ? "#fff" : "#999",
+              transition: "all 0.2s",
+              lineHeight: "18px",
+            }}
+          >
+            Chat
+          </button>
+        </div>
         <Button
           type="text"
           size="small"
@@ -499,14 +679,82 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
           <div style={bubbleStyle("assistant")}>
             <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
               <RobotOutlined style={{ fontSize: 13 }} />
-              <span>AI 正在逐步处理…</span>
+              <span>{useAgent ? "Agent 正在处理…" : "AI 正在逐步处理…"}</span>
             </div>
-            {steps.length > 0 ? (
-              <WorkflowSteps steps={steps} />
-            ) : (
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>{status || "AI 思考中…"}</div>
+            {/* Agent 工具调用步骤 */}
+            {useAgent && agentSteps.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {agentSteps.map((s, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 6,
+                      padding: "4px 6px",
+                      marginBottom: 4,
+                      borderRadius: 6,
+                      background: s.status === "running" ? "#fffbe6" : s.status === "error" ? "#fff2f0" : "#f6ffed",
+                      border: `1px solid ${s.status === "running" ? "#ffe58f" : s.status === "error" ? "#ffccc7" : "#b7eb8f"}`,
+                      fontSize: 11,
+                      lineHeight: "16px",
+                    }}
+                  >
+                    <span style={{ flexShrink: 0, marginTop: 1 }}>
+                      {s.status === "running" ? (
+                        <SearchOutlined style={{ color: "#faad14" }} />
+                      ) : (
+                        <ToolOutlined style={{ color: "#52c41a" }} />
+                      )}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 500, color: "#333" }}>
+                        {TOOL_LABELS[s.tool] ?? s.tool}
+                      </span>
+                      {s.summary && (
+                        <div style={{ color: "#999", marginTop: 2, wordBreak: "break-all" }}>
+                          {s.summary}
+                        </div>
+                      )}
+                    </div>
+                    {s.status === "running" && (
+                      <span style={{ color: "#faad14", flexShrink: 0, fontSize: 10 }}>执行中</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
-            {steps.length > 0 && status && (
+            {/* Agent 思考过程：可折叠灰色文字 */}
+            {useAgent && reasoningContent && (
+              <details style={{ marginBottom: 8, fontSize: 12 }}>
+                <summary style={{ cursor: "pointer", color: "#999", userSelect: "none" }}>
+                  思考过程
+                </summary>
+                <div
+                  style={{
+                    marginTop: 4,
+                    padding: "8px 10px",
+                    background: "#f5f5f5",
+                    borderRadius: 6,
+                    maxHeight: 200,
+                    overflowY: "auto",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    color: "#888",
+                    lineHeight: "18px",
+                  }}
+                >
+                  {reasoningContent}
+                </div>
+              </details>
+            )}
+            {/* 非 Agent 模式：原有步骤条 */}
+            {!useAgent && steps.length > 0 ? (
+              <WorkflowSteps steps={steps} />
+            ) : !useAgent ? (
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>{status || "AI 思考中…"}</div>
+            ) : null}
+            {!useAgent && steps.length > 0 && status && (
               <div style={{ fontSize: 11, color: "#999", marginBottom: 4 }}>{status}</div>
             )}
             {streamText && (
@@ -590,7 +838,7 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
           );
         })()}
 
-        {/* 调用失败：失败提示 + 重试 */}
+        {/* 调用失败：失败提示 + 重试 / 继续 */}
         {errorInfo && phase !== "generating" && (
           <div style={{ ...bubbleStyle("assistant"), background: "#fff2f0", border: "1px solid #ffccc7" }}>
             <div style={{ fontWeight: 600, color: "#cf1322", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
@@ -600,10 +848,23 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
             {steps.length > 0 && <WorkflowSteps steps={steps} />}
             <div style={{ fontSize: 12, color: "#666", margin: "6px 0 8px" }}>{errorInfo}</div>
             <Space size={8}>
-              <Button size="small" type="primary" danger icon={<ReloadOutlined />} onClick={handleRetry}>
-                {canResumeRetry ? "从失败步骤重试" : "重试"}
-              </Button>
-              <Button size="small" onClick={() => setErrorInfo(null)}>
+              {useAgent && (agentErrorWorkflowIdRef.current || workflowIdRef.current) ? (
+                <>
+                  <Button size="small" type="primary" icon={<ForwardOutlined />} onClick={handleContinue}>
+                    继续
+                  </Button>
+                  <Button size="small" icon={<ReloadOutlined />} onClick={handleRetry}>
+                    重新开始
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button size="small" type="primary" danger icon={<ReloadOutlined />} onClick={handleRetry}>
+                    {canResumeRetry ? "从失败步骤重试" : "重试"}
+                  </Button>
+                </>
+              )}
+              <Button size="small" onClick={() => { setErrorInfo(null); agentErrorWorkflowIdRef.current = ""; }}>
                 关闭
               </Button>
             </Space>

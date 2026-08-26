@@ -57,11 +57,16 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // 客户端断开时中止所有 AI 调用（双重保障：request.signal + heartbeat 兜底）
+      const clientAbort = new AbortController();
+      const onClientDisconnect = () => clientAbort.abort();
+      request.signal.addEventListener("abort", onClientDisconnect, { once: true });
       const send: SseSend = (obj) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
         } catch {
-          // 客户端已断开
+          // 客户端已断开，通知所有进行中的 AI 调用中止
+          clientAbort.abort();
         }
       };
       // 心跳：防止代理因无数据而超时断连
@@ -70,6 +75,7 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(": heartbeat\n\n"));
         } catch {
           // 客户端已断开
+          clientAbort.abort();
         }
       }, 15000);
       try {
@@ -165,6 +171,7 @@ export async function POST(request: Request) {
           from === "coords"
             ? { from: "coords", plan: state.generatedPlan! }
             : undefined,
+          clientAbort.signal,
         );
         if (!plan) {
           // runPlanGeneration 已推送 error 事件；按实际失败环节标记步骤
@@ -179,6 +186,7 @@ export async function POST(request: Request) {
         send({ type: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {
         clearInterval(heartbeat);
+        request.signal.removeEventListener("abort", onClientDisconnect);
         try {
           controller.close();
         } catch {

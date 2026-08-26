@@ -10,6 +10,10 @@ const PROTOCOL_HINTS: Record<string, { baseUrl: string; model: string }> = {
     baseUrl: "例如 https://api.deepseek.com/v1（填到 /v1 为止）",
     model: "例如 deepseek-chat",
   },
+  "openai-response": {
+    baseUrl: "例如 https://api.openai.com/v1（填到 /v1 为止）",
+    model: "例如 gpt-4o",
+  },
   anthropic: {
     baseUrl: "例如 https://api.anthropic.com（填域名即可）",
     model: "例如 claude-sonnet-5",
@@ -135,12 +139,13 @@ export default function SettingsPage() {
         <Card title="AI 服务">
           <Typography.Paragraph type="secondary">
             配置你自己的 AI 服务。国内主流服务（DeepSeek、Kimi、通义等）和 one-api/new-api
-            自建网关都使用 OpenAI 兼容协议。
+            自建网关都使用 OpenAI 兼容协议。OpenAI 官方最新模型可选用 OpenAI Responses 协议。
           </Typography.Paragraph>
           <Form.Item label="协议类型" name="ai.protocol" initialValue="openai">
             <Select
               options={[
                 { value: "openai", label: "OpenAI 兼容（DeepSeek / Kimi / 通义 / one-api 等）" },
+                { value: "openai-response", label: "OpenAI Responses（官方最新协议，支持 gpt-4o 等）" },
                 { value: "anthropic", label: "Anthropic（Claude 官方协议）" },
               ]}
               style={{ maxWidth: 420 }}
