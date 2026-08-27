@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     provider?: string;
     apiKey?: string;
   };
-  const saved = await getSettings();
+  const saved = await getSettings(admin.id);
   const provider = (body.provider || saved["search.provider"] || "tavily").trim();
   const apiKey = (body.apiKey || saved["search.apiKey"] || "").trim();
   if (!apiKey) {

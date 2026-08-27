@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { chat, chatStream, type AiConfig, type ChatMessage } from "@/lib/ai/client";
+import { chat, chatStream, secondaryConfig, type AiConfig, type ChatMessage } from "@/lib/ai/client";
 import {
   aiConfigFromSettings,
   buildAdjustFocusPrompt,
@@ -36,7 +36,7 @@ async function detectAdjustIntent(
     .join("；")
     .slice(0, 500);
   const raw = await chat(
-    config,
+    secondaryConfig(config),
     [
       {
         role: "system",
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
         }
       }, 15000);
       try {
-        const settings = await getSettings();
+        const settings = await getSettings(user.id);
         const config = aiConfigFromSettings(settings);
         if (!config) {
           send({ type: "error", message: "尚未配置 AI 服务，请先到设置页填写服务地址、API Key 和模型名" });
@@ -217,7 +217,7 @@ export async function POST(request: Request) {
             sendStep(send, "confirm", "分析调整意图", "start");
             try {
               const confirmRaw = await chat(
-                config,
+                secondaryConfig(config),
                 buildConfirmPrompt(tripDetail, items, message),
                 200,
                 30000,

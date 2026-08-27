@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
   const body = (await request.json().catch(() => ({}))) as { webKey?: string };
-  const saved = await getSettings();
+  const saved = await getSettings(admin.id);
   const webKey = (body.webKey || saved["amap.webKey"] || "").trim();
 
   if (!webKey) {

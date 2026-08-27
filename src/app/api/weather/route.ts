@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
+import { getSettings } from "@/lib/settings";
 import { fetchDailyWeather } from "@/lib/weather";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export async function GET(request: Request) {
   const city = (searchParams.get("city") ?? "").trim();
   if (!city) return NextResponse.json({ ok: false, error: "缺少 city 参数" });
 
-  const result = await fetchDailyWeather(city);
+  const settings = await getSettings(user.id);
+  const result = await fetchDailyWeather(city, settings);
   return NextResponse.json(result);
 }

@@ -10,6 +10,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   EllipsisOutlined,
+  HistoryOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   ShareAltOutlined,
@@ -27,6 +28,7 @@ import MobileTripDetail from "@/components/mobile/MobileTripDetail";
 import PoiDetailDrawer from "@/components/PoiDetailDrawer";
 import PoiExplorerPanel from "@/components/PoiExplorerPanel";
 import ShareModal from "@/components/ShareModal";
+import SnapshotPanel from "@/components/SnapshotPanel";
 import TripFormModal from "@/components/TripFormModal";
 import TripInspectDrawer from "@/components/TripInspectDrawer";
 import { downloadText, tripToCsv, tripToMarkdown } from "@/lib/export";
@@ -51,6 +53,7 @@ export default function TripDetailPage() {
   const [detailItem, setDetailItem] = useState<ItineraryItemT | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [guideShareOpen, setGuideShareOpen] = useState(false);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
   const [weather, setWeather] = useState<Record<number, string>>({});
   const [itemModal, setItemModal] = useState<{
     open: boolean;
@@ -283,6 +286,7 @@ export default function TripDetailPage() {
               items: [
                 { key: "inspect", icon: <SafetyCertificateOutlined />, label: "行程体检" },
                 { key: "selfcheck", icon: <RobotOutlined />, label: "方案自检" },
+                { key: "snapshot", icon: <HistoryOutlined />, label: "版本历史" },
                 ...(isOwner2
                   ? [
                       { key: "copy", icon: <CopyOutlined />, label: "复制行程" },
@@ -305,6 +309,7 @@ export default function TripDetailPage() {
               onClick: ({ key }) => {
                 if (key === "inspect") setInspectOpen(true);
                 else if (key === "selfcheck") setSelfCheckOpen(true);
+                else if (key === "snapshot") setSnapshotOpen(true);
                 else if (key === "copy") handleCopyTrip();
                 else if (key === "memberShare") setShareOpen(true);
                 else if (key === "edit") setTripModalOpen(true);
@@ -347,6 +352,9 @@ export default function TripDetailPage() {
         <div style={{ flex: 1 }} />
         <Button size="middle" icon={<SafetyCertificateOutlined />} onClick={() => setInspectOpen(true)}>体检</Button>
         <Button size="middle" icon={<RobotOutlined />} onClick={() => setSelfCheckOpen(true)}>自检</Button>
+        {isOwner2 && (
+          <Button size="middle" icon={<HistoryOutlined />} onClick={() => setSnapshotOpen(true)}>版本</Button>
+        )}
         {isOwner2 && (
           <Button size="middle" icon={<CopyOutlined />} onClick={handleCopyTrip}>复制</Button>
         )}
@@ -495,6 +503,12 @@ export default function TripDetailPage() {
         trip={trip}
         onCancel={() => setGuideShareOpen(false)}
         onTokenChanged={(token) => setTrip((p) => (p ? { ...p, shareToken: token } : p))}
+      />
+      <SnapshotPanel
+        open={snapshotOpen}
+        tripId={trip.id}
+        onCancel={() => setSnapshotOpen(false)}
+        onRestored={load}
       />
     </>
   );

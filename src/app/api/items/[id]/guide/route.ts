@@ -22,7 +22,7 @@ async function loadItemWithAccess(request: Request, itemId: string) {
   if (!item) return NextResponse.json({ error: "行程项不存在" }, { status: 404 });
   const access = await tripAccess(item.tripId, user);
   if (!access) return NextResponse.json({ error: "无权访问该行程" }, { status: 403 });
-  return { item };
+  return { item, user };
 }
 
 export async function GET(request: Request, { params }: Params) {
@@ -47,12 +47,12 @@ export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
   const loaded = await loadItemWithAccess(request, id);
   if (loaded instanceof NextResponse) return loaded;
-  const { item } = loaded;
+  const { item, user } = loaded;
 
   const place = (item.placeName || item.title).trim();
   if (!place) return NextResponse.json({ error: "该行程项没有地点信息" }, { status: 400 });
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const config = aiConfigFromSettings(settings);
   if (!config) {
     return NextResponse.json(

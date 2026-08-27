@@ -50,17 +50,54 @@ export function extractJson(raw: string): string {
   let text = raw.trim();
   const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
   if (fence) text = fence[1].trim();
+
+  // 策略 1：找第一个 { 到最后一个 }（适用于 JSON 被包裹在文本中的情况）
   const firstObj = text.indexOf("{");
   const lastObj = text.lastIndexOf("}");
   const firstArr = text.indexOf("[");
   const lastArr = text.lastIndexOf("]");
-  // 优先用更靠前的定界符：数组 [ 在 { 前面时取数组，否则取对象
   const arrFirst = firstArr >= 0 && (firstObj < 0 || firstArr < firstObj);
   if (arrFirst && lastArr > firstArr) {
     text = text.slice(firstArr, lastArr + 1);
   } else if (firstObj >= 0 && lastObj > firstObj) {
     text = text.slice(firstObj, lastObj + 1);
   }
+
+  // 策略 2：如果提取结果解析失败，尝试找 "{"days" 模式（GLM 模型常在推理后输出 JSON）
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    const daysMarker = text.indexOf('{"days"');
+    if (daysMarker > 0) {
+      // 从 {"days" 开始，手动找匹配的 }
+      const slice = text.slice(daysMarker);
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      let endIdx = -1;
+      for (let i = 0; i < slice.length; i++) {
+        const c = slice[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === "\\") esc = true;
+          else if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') inStr = true;
+        else if (c === "{") depth++;
+        else if (c === "}") {
+          depth--;
+          if (depth === 0) { endIdx = i + 1; break; }
+        }
+      }
+      if (endIdx > 0) {
+        const candidate = slice.slice(0, endIdx);
+        try { JSON.parse(candidate); return candidate; } catch { /* continue */ }
+      }
+    }
+  }
+
   return text;
 }
 

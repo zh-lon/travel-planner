@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "坐标参数不合法" });
   }
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const webKey = (settings["amap.webKey"] ?? "").trim();
   if (!webKey) {
     return NextResponse.json({ ok: false, error: "未配置高德 Web 服务 Key" });

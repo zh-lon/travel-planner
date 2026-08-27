@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   if (!keywords && !type) return NextResponse.json({ ok: true, pois: [] });
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const webKey = settings["amap.webKey"] ?? "";
   if (!webKey) {
     return NextResponse.json({ ok: false, error: "未配置高德 Web 服务 Key，请到设置页填写" });

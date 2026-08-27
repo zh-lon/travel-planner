@@ -82,7 +82,7 @@ export async function POST(request: Request) {
           return;
         }
 
-        const settings = await getSettings();
+        const settings = await getSettings(user.id);
         const config = aiConfigFromSettings(settings);
         if (!config) {
           send({ type: "error", message: "尚未配置 AI 服务，请先到设置页填写服务地址、API Key 和模型名" });

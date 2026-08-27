@@ -240,8 +240,14 @@ export default function AiAssistantPanel({ trip, collapsed, onCollapsedChange, o
             gotTerminal = true;
             setPlan(event.plan as AiPlan);
             setAiFocusDays(Array.isArray(event.focusDays) && event.focusDays.length > 0 ? event.focusDays : null);
-            setAiAllowedFields(Array.isArray(event.allowedFields) ? event.allowedFields : null);
-            setAiStayIntent(event.stayIntent && typeof event.stayIntent === "object" ? event.stayIntent : null);
+            // Agent 模式：AI 直接决策，不使用正则兜底过滤
+            if (useAgent) {
+              setAiAllowedFields(["all"]);
+              setAiStayIntent({ hotel: true, food: true });
+            } else {
+              setAiAllowedFields(Array.isArray(event.allowedFields) ? event.allowedFields : null);
+              setAiStayIntent(event.stayIntent && typeof event.stayIntent === "object" ? event.stayIntent : null);
+            }
             setAdjustInstruction(confirmAnswer ? `${msg}（用户确认选择：${confirmAnswer}）` : msg);
             setStreamText("");
             setDiffOpen(true);

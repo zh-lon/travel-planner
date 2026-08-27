@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import dayjs from "dayjs";
 import { prisma } from "@/lib/db";
 import { aiConfigFromSettings } from "@/lib/ai/generate";
-import { chatStream, type ChatMessage } from "@/lib/ai/client";
+import { chatStream, secondaryConfig, type ChatMessage } from "@/lib/ai/client";
 import { canEditRole, requireUser, tripAccess } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 import { webSearch, type WebSearchResult } from "@/lib/websearch";
@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: Params) {
   }
   const trip = access.trip;
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const aiConfig = aiConfigFromSettings(settings);
   if (!aiConfig) {
     return NextResponse.json({ error: "尚未配置 AI 服务，请管理员到设置页填写" }, { status: 400 });
@@ -135,7 +135,7 @@ export async function POST(request: Request, { params }: Params) {
             },
           ];
           // 流式生成（delta 为中间 JSON 规划，不转发给前端，避免混入最终总结文本）
-          const rawPlan = await chatStream(aiConfig, planMessages, () => {}, 1024, 30000);
+          const rawPlan = await chatStream(secondaryConfig(aiConfig), planMessages, () => {}, 1024, 30000);
           const jsonStr = rawPlan.trim().replace(/```json\s*|\s*```/g, "");
           const parsed = JSON.parse(jsonStr) as unknown;
           if (Array.isArray(parsed)) {

@@ -167,6 +167,59 @@ export default function SettingsPage() {
           >
             <InputNumber min={256} max={65536} step={256} placeholder="8000" style={{ width: 220 }} />
           </Form.Item>
+          <Form.Item
+            label="思考强度"
+            name="ai.thinkingIntensity"
+            initialValue="disabled"
+            extra="控制 AI 推理过程的强度。关闭则不输出推理（速度快）；低/中/高逐步增加推理深度。部分模型或代理可能不支持此参数"
+          >
+            <Select
+              options={[
+                { value: "disabled", label: "关闭（默认，速度快）" },
+                { value: "low", label: "低（快速推理）" },
+                { value: "medium", label: "中（均衡）" },
+                { value: "high", label: "高（深度推理）" },
+              ]}
+              style={{ maxWidth: 420 }}
+            />
+          </Form.Item>
+          <Form.Item
+            label="小模型名（选填）"
+            name="ai.secondaryModel"
+            extra="用于轻量任务（坐标验证、意图识别等）。留空则全部使用主模型"
+          >
+            <Input placeholder="例如 gpt-4o-mini、deepseek-chat、qwen-turbo" style={{ maxWidth: 420 }} />
+          </Form.Item>
+          <Form.Item
+            label="小模型协议（选填）"
+            name="ai.secondaryProtocol"
+            extra="小模型使用的协议，留空则复用主模型协议。切换服务商时按需选择"
+          >
+            <Select
+              allowClear
+              placeholder="复用主模型协议"
+              options={[
+                { value: "openai", label: "OpenAI 兼容" },
+                { value: "openai-response", label: "OpenAI Responses" },
+                { value: "anthropic", label: "Anthropic" },
+              ]}
+              style={{ maxWidth: 420 }}
+            />
+          </Form.Item>
+          <Form.Item
+            label="小模型服务地址（选填）"
+            name="ai.secondaryBaseUrl"
+            extra="小模型的服务地址，留空则复用主模型地址。切换到不同服务商时填写"
+          >
+            <Input placeholder="留空则复用主模型服务地址" style={{ maxWidth: 420 }} />
+          </Form.Item>
+          <Form.Item
+            label="小模型 API Key（选填）"
+            name="ai.secondaryApiKey"
+            extra="小模型的 API Key，留空则复用主模型 Key。仅保存在本机数据库"
+          >
+            <Input.Password placeholder="留空则复用主模型 API Key" style={{ maxWidth: 420 }} />
+          </Form.Item>
           <Button onClick={handleTestAi} loading={testingAi}>
             测试连通性
           </Button>

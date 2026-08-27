@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { canEditRole, requireUser, tripAccess } from "@/lib/session";
 import { dayCountOf } from "@/lib/trips";
+import { createTripSnapshot } from "@/lib/snapshot";
 import { ITEM_TYPE_VALUES } from "@/types/constants";
+import type { ItineraryItemT } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +96,17 @@ export async function POST(request: Request, { params }: Params) {
 
   const withId = items.filter((i): i is IncomingItem & { id: string } => !!i.id);
   const withoutId = items.filter((i) => !i.id);
+
+  // AI 修改前自动保存快照（静默，失败不影响主流程）
+  try {
+    const currentItems = await prisma.itineraryItem.findMany({
+      where: { tripId: id },
+      orderBy: [{ dayIndex: "asc" }, { sortOrder: "asc" }],
+    });
+    await createTripSnapshot(id, currentItems as ItineraryItemT[], currentDayCount);
+  } catch {
+    // 快照创建失败不影响主流程
+  }
 
   await prisma.$transaction([
     ...(dayCount !== currentDayCount

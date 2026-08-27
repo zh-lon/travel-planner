@@ -9,6 +9,7 @@ import { searchPois } from "@/lib/geo";
 import { fetchDailyWeather } from "@/lib/weather";
 import { buildAdjustPrompt, buildAdjustFocusPrompt, mergeFocusPlan, mergePartialPlan, runPlanGeneration, sendStep, type SseSend } from "./generate";
 import { detectFocusDays } from "./diff";
+import { createTripSnapshot } from "@/lib/snapshot";
 import type { ItineraryItemT, TripDetail, AiPlan } from "@/types";
 
 dayjs.locale("zh-cn");
@@ -123,11 +124,11 @@ async function executeSearchPois(
 
 async function executeGetWeather(
   args: Record<string, unknown>,
-  _ctx: AgentContext,
+  ctx: AgentContext,
 ): Promise<string> {
   const city = typeof args.city === "string" ? args.city.trim() : "";
   if (!city) return "错误：缺少城市名";
-  const result = await fetchDailyWeather(city);
+  const result = await fetchDailyWeather(city, ctx.settings);
   if (!result.ok) {
     if (result.disabled) return "错误：未配置和风天气服务，请先在设置中配置";
     return `天气查询失败：${result.error ?? "未知错误"}`;
@@ -270,20 +271,14 @@ function buildAgentSystemPrompt(ctx: AgentContext): string {
 
   return `你是一个专业的旅行规划 Agent，名叫"旅行助手"。你正在帮助用户规划一趟旅行：目的地「${trip.destination}」，${dayCount} 天（${dateRange}），当前已有 ${itemCount} 个行程项。
 
-你可以使用以下工具来帮助用户：
-- **search_web**：搜索互联网获取最新旅行攻略、美食推荐、交通信息等
-- **search_pois**：在高德地图上搜索具体地点（景点、餐厅、酒店等），获取位置和坐标
-- **get_weather**：查询目的地天气预报
-- **get_itinerary**：查看当前行程的完整安排
-- **propose_plan**：当你收集了足够的信息，决定为用户生成或调整行程方案时调用
-
-工作原则：
-1. **先收集信息，再行动**：在给出建议或修改行程前，主动使用工具收集必要信息（搜索攻略、查天气、查 POI、看现有行程）
-2. **主动但克制**：每次调用工具时说明你在做什么，让用户了解你的思路
-3. **信息整合**：将多个工具的结果综合分析后给用户建议，而不是罗列原始数据
-4. **行程修改**：只有当用户明确要求调整行程，或你确认信息足够后才调用 propose_plan。调用前先用 get_itinerary 了解现有安排
-5. **中文回复**：始终用中文回复，语气亲切自然
-6. **不要编造**：所有地点、天气、攻略信息必须来自工具返回的实际数据，不要凭空编造
+⚠️ 核心规则（必须遵守）：
+1. **行程修改必须用 propose_plan**：任何行程内容的修改、完善、新增，都必须通过调用 propose_plan 工具完成。绝对不要在文字回复中生成行程表格或行程内容！
+2. **propose_plan 是唯一出口**：你收集信息后，将所有需求整理成一段详细的 instruction，调用 propose_plan 即可。系统会自动生成方案、匹配坐标并展示给用户确认。
+3. **先了解再行动**：修改行程前先调用 get_itinerary。用户已给出详细地点/美食时，信任用户提供的信息，无需逐个搜索验证。
+4. **搜索克制**：每次对话最多调用 3 次 search_pois/search_web。只搜索用户没提供具体信息的关键地点。
+5. **快速决策**：收集足够信息后（1-2 轮工具调用），立即调用 propose_plan，不要拖延。
+6. **文字回复仅用于闲聊**：只有用户纯闲聊、问候或询问非行程修改问题时，才用文字回复。
+7. **中文交流**，语气亲切自然。
 ${hasItems ? `\n当前行程概要（详细内容请用 get_itinerary 工具获取）：\n${items.slice(0, 20).map((i) => `第${(i.dayIndex ?? 0) + 1}天 ${i.startTime ?? ""} ${i.title}${i.placeName ? ` @ ${i.placeName}` : ""}`).join("\n")}${items.length > 20 ? `\n... 共 ${items.length} 项` : ""}` : ""}`;
 }
 
@@ -315,7 +310,8 @@ export async function runAgent(
   for (let iter = startIter; iter < MAX_AGENT_ITERATIONS; iter++) {
     // 客户端已断开，立即终止
     if (signal?.aborted) throw new DOMException("客户端已断开", "AbortError");
-    const result = await chatWithRetry(ctx.config, messages, AGENT_TOOLS, 4096, 120000, signal, callbacks.onStatus, callbacks.onDelta);
+
+    const result = await chatWithRetry(ctx.config, messages, AGENT_TOOLS, 16384, 120000, signal, callbacks.onStatus, callbacks.onDelta);
 
     // 传递思考过程（reasoning_content）给上层
     if (result.reasoningContent) {
@@ -324,6 +320,16 @@ export async function runAgent(
 
     // AI 返回了文本回复（无工具调用）
     if (result.text && result.toolCalls.length === 0) {
+      // 首轮若无工具调用，直接使用用户消息作为指令触发 propose_plan
+      // 避免模型跳过工具调用直接闲聊
+      if (iter === 0 && message) {
+        callbacks.onStatus?.("正在生成行程方案…");
+        return {
+          type: "plan",
+          instruction: message,
+          focusDays: undefined,
+        };
+      }
       return { type: "reply", text: result.text };
     }
 
@@ -353,12 +359,33 @@ export async function runAgent(
       };
       messages.push(assistantMsg);
 
+      // 限制每轮最多执行 3 个搜索类工具，防止模型过度搜索
+      let searchCount = 0;
+      const MAX_SEARCH_PER_ROUND = 3;
       for (const tc of result.toolCalls) {
+        if (tc.name === "search_pois" || tc.name === "search_web") {
+          searchCount++;
+          if (searchCount > MAX_SEARCH_PER_ROUND) {
+            messages.push({
+              role: "tool",
+              content: `已跳过：每轮最多 ${MAX_SEARCH_PER_ROUND} 个搜索工具，请直接调用 propose_plan 生成方案`,
+              tool_call_id: tc.id,
+            });
+            continue;
+          }
+        }
         const toolResult = await executeTool(tc, ctx, signal);
         messages.push({
           role: "tool",
           content: toolResult,
           tool_call_id: tc.id,
+        });
+      }
+      // 如果本轮执行了搜索工具，主动提示模型调用 propose_plan
+      if (searchCount > 0) {
+        messages.push({
+          role: "user",
+          content: `⚠️ 重要指令：你已收集到足够的信息。现在必须立即调用 propose_plan 工具来生成方案。不要输出任何文字回复，不要生成行程表格。只输出 <tool_call> 块调用 propose_plan。`,
         });
       }
       // 保存当前状态到 workflow，支持断点续跑
@@ -407,10 +434,24 @@ export async function executeProposePlan(
   let focusDaysSet: Set<number> | null = null;
   if (focusDays && focusDays.length > 0) {
     focusDaysSet = new Set(focusDays.filter((d) => d >= 0));
-  } else {
-    focusDaysSet = detectFocusDays(fullInstruction, tripDetail.startDate);
+  }
+  // Agent 模式下，如果未指定 focus_days，尝试从 instruction 中检测日期
+  // 这可以大幅缩减 prompt 大小（仅发送关注天的行程项），避免 GLM 模型因 prompt 过长产生大量推理
+  if (!focusDaysSet && fullInstruction) {
+    const detected = detectFocusDays(fullInstruction, tripDetail.startDate);
+    if (detected && detected.size > 0) {
+      focusDaysSet = detected;
+    }
   }
   const focusDaysArr = focusDaysSet ? [...focusDaysSet] : [];
+
+  // Agent 修改前自动保存快照（静默，失败不影响主流程）
+  try {
+    const dayCount = dayjs(tripDetail.endDate).diff(dayjs(tripDetail.startDate), "day") + 1;
+    await createTripSnapshot(tripDetail.id, items, dayCount);
+  } catch {
+    // 快照创建失败不影响主流程
+  }
 
   sendStep(send, "generate", "生成调整方案", "start");
   const messages = focusDaysSet

@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const admin = await requireAdmin(request);
   if (admin instanceof NextResponse) return admin;
   const body = (await request.json().catch(() => ({}))) as Partial<AiConfig>;
-  const saved = await getSettings();
+  const saved = await getSettings(admin.id);
 
   const config: AiConfig = {
     protocol: (body.protocol || saved["ai.protocol"] || "openai") as AiProtocol,

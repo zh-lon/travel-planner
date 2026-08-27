@@ -1,5 +1,4 @@
 // 和风天气抓取（服务端共享）：/api/weather 路由与行程体检共用
-import { getSettings } from "@/lib/settings";
 
 export interface DailyWeather {
   date: string;
@@ -21,8 +20,7 @@ export type WeatherResult =
   | { ok: false; disabled?: true; error?: string };
 
 // 未来 7 天天气；未配置和风返回 disabled，失败返回 error
-export async function fetchDailyWeather(city: string): Promise<WeatherResult> {
-  const settings = await getSettings();
+export async function fetchDailyWeather(city: string, settings: { [key: string]: string | undefined }): Promise<WeatherResult> {
   const host = normalizeHost(settings["qweather.host"] ?? "");
   const key = (settings["qweather.key"] ?? "").trim();
   if (!host || !key) return { ok: false, disabled: true };

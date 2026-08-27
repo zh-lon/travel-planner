@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
 import { getSettings } from "@/lib/settings";
 import { aiConfigFromSettings } from "@/lib/ai/generate";
-import { chatStream, type ChatMessage } from "@/lib/ai/client";
+import { chatStream, secondaryConfig, type ChatMessage } from "@/lib/ai/client";
 import { parseJsonLoose } from "@/lib/ai/schema";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   }
   const text = body.text.trim().slice(0, 1000);
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const config = aiConfigFromSettings(settings);
   if (!config) {
     return NextResponse.json(
@@ -80,7 +80,7 @@ JSON 结构：
 
         let raw = "";
         try {
-          raw = await chatStream(config, messages, (delta) => {
+          raw = await chatStream(secondaryConfig(config), messages, (delta) => {
             send({ type: "delta", text: delta });
           }, 1024, 180000);
         } catch (err) {

@@ -70,7 +70,8 @@ export async function POST(request: Request, { params }: Params) {
 
         // 2. 天气检查（仅覆盖未来 7 天）
         send({ type: "status", text: "正在检查天气风险…" });
-        const wx = await fetchDailyWeather(trip.destination);
+        const settings = await getSettings(user.id);
+        const wx = await fetchDailyWeather(trip.destination, settings);
         if (wx.ok) {
           const wxFindings = runWeatherChecks(items, startDate, dayCount, wx.daily);
           findings.push(...wxFindings);
@@ -86,7 +87,6 @@ export async function POST(request: Request, { params }: Params) {
         }
 
         // 3. AI 审查（开放时间/闭馆/节奏），未配置则跳过
-        const settings = await getSettings();
         const config = aiConfigFromSettings(settings);
         if (config) {
           send({ type: "status", text: "AI 正在审查开放时间与节奏…" });

@@ -269,19 +269,29 @@ export function detectFocusDays(instruction: string, startDate?: string): Set<nu
     for (let d = 0; d < n && d < 30; d++) days.add(d);
   }
   // 日期格式识别：如"10月4号"、"10月4日" → 根据 startDate 映射为天索引
+  // 同时支持共享月份格式：如"10月4号和5号"、"10月4日、5日、6日"
   if (startDate) {
     const tripStart = new Date(startDate);
     if (!isNaN(tripStart.getTime())) {
-      // 匹配 "M月D号" 或 "M月D日"（支持中文数字和阿拉伯数字）
-      const dateRegex = /(\d{1,2})\s*月\s*(\d{1,2})\s*[号日]/g;
-      while ((m = dateRegex.exec(text)) !== null) {
-        const month = +m[1];
-        const day = +m[2];
-        // 构造目标日期（使用行程年份）
+      const addDayByDate = (month: number, day: number) => {
         const targetDate = new Date(tripStart.getFullYear(), month - 1, day);
         const diffDays = Math.round((targetDate.getTime() - tripStart.getTime()) / 86400000);
         if (diffDays >= 0 && diffDays < 30) {
           days.add(diffDays);
+        }
+      };
+      // 匹配 "M月D号" 或 "M月D日"，同时捕获后续共享月份的天（如"和5号"、"、6日"）
+      const dateRegex = /(\d{1,2})\s*月\s*(\d{1,2})\s*[号日]/g;
+      while ((m = dateRegex.exec(text)) !== null) {
+        const month = +m[1];
+        addDayByDate(month, +m[2]);
+        // 检查紧随其后的共享月份天："和D号"、"、D日"、"及D号" 等
+        let afterIdx = m.index + m[0].length;
+        const sharedRegex = /^\s*(?:和|与|、|及)\s*(\d{1,2})\s*[号日]/;
+        let sm: RegExpExecArray | null;
+        while ((sm = sharedRegex.exec(text.slice(afterIdx))) !== null) {
+          addDayByDate(month, +sm[1]);
+          afterIdx += sm[0].length;
         }
       }
     }

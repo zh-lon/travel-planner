@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, results: [] });
   }
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const provider = settings["search.provider"] ?? "tavily";
   const apiKey = settings["search.apiKey"] ?? "";
   if (!apiKey) {

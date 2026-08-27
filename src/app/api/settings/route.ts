@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { SETTING_KEYS, getSettings, saveSettings, type SettingsMap } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
-// 全局服务配置（AI/地图/天气 Key）：仅管理员可读写
+// 用户个人服务配置（AI/地图/天气 Key）：每个用户独立配置
 export async function GET(request: Request) {
-  const admin = await requireAdmin(request);
-  if (admin instanceof NextResponse) return admin;
-  return NextResponse.json(await getSettings());
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
+  return NextResponse.json(await getSettings(user.id));
 }
 
 export async function PUT(request: Request) {
-  const admin = await requireAdmin(request);
-  if (admin instanceof NextResponse) return admin;
+  const user = await requireUser(request);
+  if (user instanceof NextResponse) return user;
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
@@ -25,6 +25,6 @@ export async function PUT(request: Request) {
       values[key] = value.trim();
     }
   }
-  await saveSettings(values);
+  await saveSettings(user.id, values);
   return NextResponse.json({ ok: true });
 }

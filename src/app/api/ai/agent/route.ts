@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       }, 15000);
 
       try {
-        const settings = await getSettings();
+        const settings = await getSettings(user.id);
         const config = aiConfigFromSettings(settings);
         if (!config) {
           send({ type: "error", message: "尚未配置 AI 服务，请先到设置页填写服务地址、API Key 和模型名" });
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
         }
 
         if (agentResult.type === "plan") {
-          // Agent 决定生成方案
+          // Agent 决定生成方案（或由 reply 转换而来）
           send({ type: "status", text: "Agent 正在生成行程方案…" });
           // 标记已进入 plan 阶段，续跑时可跳过 agent 循环
           const wf0 = getWorkflow(workflowId);
@@ -202,34 +202,38 @@ export async function POST(request: Request) {
             return;
           }
 
-          send({ type: "result", plan, focusDays });
+          send({ type: "result", plan, focusDays, allowedFields: ["all"], stayIntent: { hotel: false, food: false } });
         } else {
-          // Agent 返回文本回复，流式发送
-          sendStep(send, "reply", "生成回复", "start");
-          try {
-            const reply = await chatStream(
-              config,
-              [
-                { role: "system", content: "你是一个旅行助手。请基于已收集的信息，用中文给用户一个简洁有用的回复。" },
-                { role: "user", content: agentResult.text ?? message },
-              ],
-              (delta) => send({ type: "delta", text: delta }),
-              2048,
-              undefined,
-              clientAbort.signal,
-            );
-            sendStep(send, "reply", "生成回复", "done");
-            send({ type: "reply", text: reply });
-          } catch (err) {
-            const msg =
-              err instanceof Error
-                ? err.name === "AbortError"
-                  ? "AI 调用超时"
-                  : err.message
-                : String(err);
-            sendStep(send, "reply", "生成回复", "error");
-            send({ type: "error", message: `AI 调用失败：${msg}` });
+          // Agent 返回文本回复，直接使用用户消息触发 propose_plan
+          send({ type: "status", text: "Agent 正在生成行程方案…" });
+          agentResult = { type: "plan", instruction: message, focusDays: undefined };
+          // 递归调用 plan 处理... 直接内联处理
+          const wf0 = getWorkflow(workflowId);
+          if (wf0) {
+            wf0.agentPlanPhase = true;
+            wf0.agentInstruction = message;
+            setWorkflow(workflowId, wf0);
           }
+          send({ type: "workflow", id: workflowId });
+          const { plan: fallbackPlan, focusDays: fallbackFocusDays } = await executeProposePlan(
+            ctx,
+            message,
+            undefined,
+            undefined,
+            (generatedPlan) => {
+              const wf = getWorkflow(workflowId);
+              if (wf) {
+                wf.generatedPlan = generatedPlan;
+                setWorkflow(workflowId, wf);
+              }
+            },
+            clientAbort.signal,
+          );
+          if (!fallbackPlan) {
+            send({ type: "error", message: "方案生成失败，请重试" });
+            return;
+          }
+          send({ type: "result", plan: fallbackPlan, focusDays: fallbackFocusDays, allowedFields: ["all"], stayIntent: { hotel: false, food: false } });
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

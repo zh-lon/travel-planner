@@ -13,12 +13,22 @@ dayjs.locale("zh-cn");
 export function aiConfigFromSettings(settings: SettingsMap): AiConfig | null {
   const maxTokensRaw = settings["ai.maxTokens"];
   const maxTokens = maxTokensRaw ? parseInt(maxTokensRaw, 10) : undefined;
+  const thinkingIntensity = (settings["ai.thinkingIntensity"] || "disabled") as AiConfig["thinkingIntensity"];
+  const secondaryModel = (settings["ai.secondaryModel"] || "").trim();
+  const secondaryProtocol = (settings["ai.secondaryProtocol"] || "").trim() as AiProtocol | "";
+  const secondaryBaseUrl = (settings["ai.secondaryBaseUrl"] || "").trim();
+  const secondaryApiKey = (settings["ai.secondaryApiKey"] || "").trim();
   const config: AiConfig = {
     protocol: (settings["ai.protocol"] || "openai") as AiProtocol,
     baseUrl: (settings["ai.baseUrl"] || "").trim(),
     apiKey: (settings["ai.apiKey"] || "").trim(),
     model: (settings["ai.model"] || "").trim(),
     maxTokens: maxTokens && !isNaN(maxTokens) && maxTokens > 0 ? maxTokens : undefined,
+    thinkingIntensity,
+    secondaryModel: secondaryModel || undefined,
+    secondaryProtocol: secondaryProtocol || undefined,
+    secondaryBaseUrl: secondaryBaseUrl || undefined,
+    secondaryApiKey: secondaryApiKey || undefined,
   };
   if (!config.baseUrl || !config.apiKey || !config.model) return null;
   return config;
@@ -45,7 +55,7 @@ const JSON_CONTRACT_NO_STAY = `你只输出一个 JSON 对象，不要任何解�
 重要：不要生成住宿（HOTEL）和餐饮（FOOD）类行程项。用户会自行安排住宿和餐饮，行程中只需安排景点游览、交通和购物等活动。`;
 
 // 调整行程时使用：保留全部类型（现有行程可能含住宿和餐饮项）
-const JSON_CONTRACT_ADJUST = `你只输出一个 JSON 对象，不要任何解释文字，不要 Markdown 代码块。JSON 结构如下：
+const JSON_CONTRACT_ADJUST = `⚠️ 你的输出必须以 { 开头，直接输出纯 JSON 对象。禁止输出任何思考过程、分析、解释、确认语或 Markdown 格式。只输出 JSON。JSON 结构如下：
 {"days":[{"theme":"当天主题","items":[${ITEM_JSON_SHAPE}]}]}
 硬性要求：
 1. days 数组长度必须与现有行程天数一致（除非调整要求明确要求增减天数）；
@@ -554,6 +564,8 @@ export async function matchPlanCoords(
   }
 
   // AI 验证定位结果（可选）
+  // hy3 模型的 reasoning_content 是独立字段，chat() 只取 content，不会混入推理
+  // chat() 有 60s 超时 + catch 兜底，超时自动跳过，不影响主流程
   if (aiConfig && located > 0) {
     const items = plan.days.flatMap((d) =>
       d.items
@@ -675,9 +687,7 @@ export async function runPlanGeneration(
       });
       let raw = "";
       try {
-        // 方案生成需要较多 token 输出完整 JSON，使用 config.maxTokens 但保证不低于 8000
-        // agent 循环中的 chatWithToolsStream 硬编码 4096 不受此影响
-        const genMaxTokens = config.maxTokens && config.maxTokens > 8000 ? config.maxTokens : 8000;
+        const genMaxTokens = config.maxTokens && config.maxTokens > 16000 ? config.maxTokens : 16000;
         raw = await chatStream(config, convo, (delta) => send({ type: "delta", text: delta }), genMaxTokens, undefined, signal);
       } catch (err) {
         const msg =
@@ -792,6 +802,7 @@ export async function selfCheckPlan(
 
 // SSE 事件：status（进度提示）/ delta（流式文本）/ result（最终方案）/ error
 export function planStreamResponse(
+  userId: string,
   build: (settings: SettingsMap) => Promise<{ messages: ChatMessage[]; expectedDays: number; city: string }>,
   options?: {
     transformPlan?: (plan: AiPlan) => AiPlan;
@@ -825,7 +836,7 @@ export function planStreamResponse(
         }
       }, 15000);
       try {
-        const settings = await getSettings();
+        const settings = await getSettings(userId);
         const config = aiConfigFromSettings(settings);
         if (!config) {
           send({ type: "error", message: "尚未配置 AI 服务，请先到设置页填写服务地址、API Key 和模型名" });

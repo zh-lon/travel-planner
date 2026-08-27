@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { chat } from "@/lib/ai/client";
+import { chat, secondaryConfig } from "@/lib/ai/client";
 import { buildAdjustFocusPrompt, buildAdjustPrompt, buildConfirmPrompt, mergeFocusPlan, mergePartialPlan, parseConfirmResult, planStreamResponse } from "@/lib/ai/generate";
 import { detectFocusDays, isMoveDayInstruction } from "@/lib/ai/diff";
 import { requireTripEditByChild, requireUser } from "@/lib/session";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   // 联网搜索（可选）
   let searchContext: string | undefined;
   if (useWebSearch) {
-    const settings = await getSettings();
+    const settings = await getSettings(user.id);
     const searchProvider = (settings["search.provider"] ?? "tavily").trim();
     const searchApiKey = (settings["search.apiKey"] ?? "").trim();
     if (searchApiKey) {
@@ -81,6 +81,7 @@ export async function POST(request: Request) {
     focusDays = detectFocusDays(fullInstruction, tripDetail.startDate);
   }
   return planStreamResponse(
+    user.id,
     async () => {
       const messages = focusDays
         ? buildAdjustFocusPrompt(tripDetail, items, fullInstruction, focusDays)
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
             send({ type: "step", id: "confirm", label: "分析调整意图", status: "start" });
             try {
               const confirmRaw = await chat(
-                config,
+                secondaryConfig(config),
                 buildConfirmPrompt(tripDetail, items, instruction),
                 200,
                 30000,

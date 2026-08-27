@@ -50,7 +50,7 @@ export async function POST(request: Request) {
   const keywords = body.keywords?.trim() ?? "";
   const catInfo = CATEGORY_MAP[category] ?? CATEGORY_MAP.sight;
 
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   const config = aiConfigFromSettings(settings);
   if (!config) {
     return NextResponse.json({ error: "未配置 AI 服务，请到设置页填写" }, { status: 400 });

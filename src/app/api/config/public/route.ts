@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const user = await requireUser(request);
   if (user instanceof NextResponse) return user;
-  const settings = await getSettings();
+  const settings = await getSettings(user.id);
   return NextResponse.json({
     amapJsKey: settings["amap.jsKey"] ?? "",
     amapSecurityCode: settings["amap.securityCode"] ?? "",

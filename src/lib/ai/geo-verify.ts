@@ -1,5 +1,5 @@
 // AI 地理定位验证：对高德定位结果进行 AI 分析，对错误结果尝试修正
-import { chat } from "./client";
+import { chat, secondaryConfig } from "./client";
 import type { AiConfig } from "./client";
 import { geocodeFirst, KNOWN_CITY_CENTERS } from "@/lib/geo";
 import { parseJsonLoose } from "./schema";
@@ -32,7 +32,7 @@ export async function aiVerifyGeocodeBatch(
   let verifyRaw: string;
   try {
     verifyRaw = await chat(
-      aiConfig,
+      secondaryConfig(aiConfig),
       [
         {
           role: "system",
@@ -78,7 +78,7 @@ export async function aiVerifyGeocodeBatch(
   let fixRaw: string;
   try {
     fixRaw = await chat(
-      aiConfig,
+      secondaryConfig(aiConfig),
       [
         {
           role: "system",
