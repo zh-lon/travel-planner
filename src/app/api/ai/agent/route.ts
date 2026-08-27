@@ -81,6 +81,7 @@ export async function POST(request: Request) {
         }
       }, 15000);
 
+      let workflowId = "";
       try {
         const settings = await getSettings(user.id);
         const config = aiConfigFromSettings(settings);
@@ -118,7 +119,7 @@ export async function POST(request: Request) {
         const agentResume = !skipToPlan && cached && resumeFrom === "agent" && cached.agentMessages
           ? { messages: cached.agentMessages, iteration: cached.agentIteration ?? 0 }
           : undefined;
-        const workflowId = (agentResume || skipToPlan) ? reqWorkflowId : newWorkflowId();
+        workflowId = (agentResume || skipToPlan) ? reqWorkflowId : newWorkflowId();
         if (!agentResume && !skipToPlan && !cached) {
           setWorkflow(workflowId, { createdAt: Date.now() });
         }
@@ -128,6 +129,7 @@ export async function POST(request: Request) {
         if (skipToPlan) {
           // 直接从 plan 阶段续跑
           if (!cached!.agentInstruction) {
+            console.error("[agent] 续跑失败：agentInstruction 已过期", { workflowId });
             send({ type: "error", message: "续跑信息已过期，请重新开始" });
             return;
           }
@@ -166,8 +168,9 @@ export async function POST(request: Request) {
             wf0.agentFocusDays = agentResult.focusDays;
             setWorkflow(workflowId, wf0);
           }
-          // 续跑支持：coords 阶段续跑（复用已有的 plan 缓存）
-          const resume = cached && resumeFrom === "coords" && cached.generatedPlan
+          // 续跑支持：从坐标匹配阶段续跑（复用已有的 plan 缓存）
+          // skipToPlan 时若已有 generatedPlan，直接跳过方案生成阶段
+          const resume = cached && (resumeFrom === "coords" || skipToPlan) && cached.generatedPlan
             ? { from: "coords" as const, plan: cached.generatedPlan }
             : undefined;
           if (!resume) {
@@ -198,7 +201,8 @@ export async function POST(request: Request) {
           );
 
           if (!plan) {
-            send({ type: "error", message: "方案生成失败，请重试" });
+            // runPlanGeneration 已推送 error 事件，此处仅记录服务端日志
+            console.error("[agent] plan 阶段失败", { workflowId, instruction: agentResult.instruction });
             return;
           }
 
@@ -230,7 +234,8 @@ export async function POST(request: Request) {
             clientAbort.signal,
           );
           if (!fallbackPlan) {
-            send({ type: "error", message: "方案生成失败，请重试" });
+            // runPlanGeneration 已推送 error 事件，此处仅记录服务端日志
+            console.error("[agent] plan 阶段失败（reply 回退）", { workflowId, message });
             return;
           }
           send({ type: "result", plan: fallbackPlan, focusDays: fallbackFocusDays, allowedFields: ["all"], stayIntent: { hotel: false, food: false } });
@@ -238,8 +243,15 @@ export async function POST(request: Request) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const isAbort = err instanceof Error && (err.name === "AbortError" || err.name === "DOMException");
+        console.error("[agent] 工作流失败", {
+          workflowId,
+          resumeFrom,
+          isAbort,
+          errorName: err instanceof Error ? err.name : typeof err,
+          errorMessage: msg,
+        });
         // 发送带 workflowId 的错误事件，前端可据此显示"继续"按钮
-        send({ type: "error", message: isAbort ? "连接已中断" : msg, workflowId: reqWorkflowId || undefined });
+        send({ type: "error", message: isAbort ? "连接已中断" : msg, workflowId: workflowId || undefined });
       } finally {
         clearInterval(heartbeat);
         request.signal.removeEventListener("abort", onClientDisconnect);

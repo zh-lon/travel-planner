@@ -252,8 +252,23 @@ async function chatWithRetry(
       if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
       // 4xx 错误（参数/认证问题）不重试
       if (err instanceof Error && /HTTP 4\d{2}/.test(err.message)) throw err;
-      if (attempt === MAX_AI_RETRIES) throw err;
+      if (attempt === MAX_AI_RETRIES) {
+        console.error("[agent] AI 调用最终失败（已用尽重试次数）", {
+          model: config.model,
+          maxRetries: MAX_AI_RETRIES,
+          errorName: err instanceof Error ? err.name : typeof err,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       const delay = RETRY_DELAY_MS * (attempt + 1); // 递增延迟：3s, 6s, 9s
+      console.error("[agent] AI 调用失败，即将重试", {
+        attempt: attempt + 1,
+        maxRetries: MAX_AI_RETRIES,
+        delayMs: delay,
+        errorName: err instanceof Error ? err.name : typeof err,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
       onStatus?.(`AI 调用失败，${delay / 1000}秒后重试（${attempt + 1}/${MAX_AI_RETRIES}）…`);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -306,6 +321,9 @@ export async function runAgent(
     ];
     startIter = 0;
   }
+
+  // 保存初始状态到 workflow，确保首次 AI 调用失败时也能从断点续跑
+  callbacks.onStateChange?.(messages, startIter);
 
   for (let iter = startIter; iter < MAX_AGENT_ITERATIONS; iter++) {
     // 客户端已断开，立即终止
